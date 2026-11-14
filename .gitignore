@@ -1,0 +1,18 @@
+# Secretos y entornos
+.env
+.env.*
+!.env.example
+
+# Temporales del worker OCR (nunca versionar documentos de pacientes)
+worker/tmp/
+*.db
+
+# Skills de terceros (se restauran con `npx skills` a partir de skills-lock.json)
+.claude/skills/
+.agents/
+
+# Dependencias y compilados
+node_modules/
+.next/
+__pycache__/
+.venv/
