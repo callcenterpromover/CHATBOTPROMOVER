@@ -5,6 +5,8 @@
 
 # Temporales del worker OCR (nunca versionar documentos de pacientes)
 worker/tmp/
+worker/entrada/
+worker/tessdata/
 *.db
 
 # Skills de terceros (se restauran con `npx skills` a partir de skills-lock.json)

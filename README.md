@@ -8,8 +8,11 @@ La documentación funcional está en `Downloads\chatbot\chatbot\PROMOVER_Chatbot
 | Carpeta | Qué es | Estado |
 |---|---|---|
 | `supabase/` | Esquema de la base (migraciones) y datos ficticios (`seed.sql`) | Fase 1 hecha |
-| `web/` | Panel administrativo (Next.js). Después alojará el webhook de WhatsApp | Panel hecho; webhook pendiente (Fase 3) |
-| `worker/` | Proceso Python de OCR para el equipo de la sede | Pendiente |
+| `web/` | Panel administrativo (Next.js), publicado en https://chatbotpromover.vercel.app. Después alojará el webhook de WhatsApp | Panel hecho; webhook pendiente (Fase 3) |
+| `worker/` | Proceso Python de OCR para el equipo de la sede (ver `worker/README.md`) | Hecho y probado con documentos ficticios; falta calibrar con fotos reales anonimizadas |
+
+Pendiente para el webhook: crear la alerta `MISMO_PACIENTE_MULTIPLES_SOLICITUDES` al abrir una
+solicitud y enviar al paciente el mensaje de reenvío cuando un trabajo quede en `REENVIO_REQUERIDO`.
 
 ## Reglas que no se rompen
 
