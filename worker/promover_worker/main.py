@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from PIL import Image
 
-from . import fuentes, ocr
+from . import control, fuentes, ocr
 from .cola import Cola
 from .config import RAIZ, Config, cargar
 from .extraccion import Extraccion, extraer
@@ -125,6 +125,9 @@ def ciclo(cola: Cola, cfg: Config, una_vez: bool) -> int:
     procesados = 0
     ultimo_latido = 0.0
     while True:
+        if not una_vez and control.detencion_solicitada():
+            log.info("worker_detenido_por_usuario")
+            return procesados
         # Señal de vida cada minuto (se ve en el dashboard). Si falla, se reintenta en la próxima vuelta.
         if time.monotonic() - ultimo_latido >= 60:
             try:
@@ -139,13 +142,13 @@ def ciclo(cola: Cola, cfg: Config, una_vez: bool) -> int:
             log.warning("sin_conexion tipo=%s", type(e).__name__)
             if una_vez:
                 return procesados
-            time.sleep(cfg.intervalo_segundos * 3)
+            control.esperar(cfg.intervalo_segundos * 3)
             continue
 
         if trabajo is None:
             if una_vez:
                 return procesados
-            time.sleep(cfg.intervalo_segundos)
+            control.esperar(cfg.intervalo_segundos)
             continue
 
         inicio = time.monotonic()
@@ -162,6 +165,20 @@ def ciclo(cola: Cola, cfg: Config, una_vez: bool) -> int:
             if estado != "DESCARTADO":
                 avisar_panel(trabajo["id"], cfg)
         procesados += 1
+
+
+_MUTEX = None
+
+
+def _instancia_unica() -> bool:
+    """Evita dos workers a la vez en el mismo equipo (mutex con nombre de Windows)."""
+    global _MUTEX
+    if sys.platform != "win32":
+        return True
+    import ctypes
+
+    _MUTEX = ctypes.windll.kernel32.CreateMutexW(None, False, r"Local\PromoverWorkerOCR")
+    return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
 def main() -> None:
@@ -181,6 +198,12 @@ def main() -> None:
         handlers=[archivo, logging.StreamHandler()] if sys.stderr else [archivo],
     )
     logging.getLogger("httpx").setLevel(logging.WARNING)  # sus logs incluyen URLs con identificadores
+
+    if not args.una_vez:
+        if not _instancia_unica():
+            log.info("worker_ya_estaba_corriendo")
+            return
+        control.limpiar_marca()  # arrancar significa que se quiere encendido
 
     cfg = cargar()
     cola = Cola(cfg)

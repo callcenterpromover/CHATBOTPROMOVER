@@ -12,7 +12,13 @@ Solo hace conexiones salientes (Supabase y Meta). No abre puertos.
 2. `powershell -ExecutionPolicy Bypass -File preparar.ps1` (entorno, dependencias e idioma español).
 3. Copiar `.env.example` como `.env` y completar la clave secreta de Supabase.
 4. Probar a mano: `powershell -ExecutionPolicy Bypass -File iniciar.ps1` (Ctrl+C para detener).
-5. Dejarlo permanente: `powershell -ExecutionPolicy Bypass -File instalar-servicio.ps1`.
+5. **Control manual con ícono** (lo instalado en el PC de desarrollo):
+   `powershell -ExecutionPolicy Bypass -File crear-acceso-directo.ps1` crea en el escritorio el ícono
+   **OCR PROMOVER**. Al abrirlo aparece una ventana con un botón para encender o apagar el OCR.
+   Cerrar la ventana no lo apaga: sigue en segundo plano. El apagado es ordenado (termina el documento
+   en curso) y nunca corren dos a la vez. Tras reiniciar el equipo queda apagado hasta volver a encenderlo.
+   No combinarlo con la tarea programada del paso siguiente (la tarea lo volvería a encender).
+   Dejarlo permanente sin intervención: `powershell -ExecutionPolicy Bypass -File instalar-servicio.ps1`.
    - Como administrador crea la tarea programada «PROMOVER Worker OCR»: arranca al encender el equipo,
      aunque nadie inicie sesión, y se reinicia sola si se detiene.
    - Sin administrador crea un acceso directo en Inicio (arranca al iniciar sesión).

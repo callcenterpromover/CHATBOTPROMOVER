@@ -1,4 +1,4 @@
-# Deja el worker de OCR funcionando de forma permanente en este equipo.
+﻿# Deja el worker de OCR funcionando de forma permanente en este equipo.
 #
 # - Con permisos de administrador: crea la tarea programada "PROMOVER Worker OCR" que arranca al
 #   encender el equipo (aunque nadie inicie sesión) y se reinicia sola si se detiene.

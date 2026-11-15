@@ -6,6 +6,8 @@
 # Temporales del worker OCR (nunca versionar documentos de pacientes)
 worker/tmp/
 worker/logs/
+worker/run/
+worker/recursos/
 worker/entrada/
 worker/tessdata/
 *.db

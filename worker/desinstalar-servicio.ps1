@@ -1,4 +1,4 @@
-# Detiene el worker de OCR y quita su arranque automático (tarea programada o acceso directo).
+﻿# Detiene el worker de OCR y quita su arranque automático (tarea programada o acceso directo).
 $nombre = 'PROMOVER Worker OCR'
 
 if (Get-ScheduledTask -TaskName $nombre -ErrorAction SilentlyContinue) {

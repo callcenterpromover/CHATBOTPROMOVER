@@ -4,3 +4,4 @@ pytesseract==0.3.13
 pypdfium2==4.30.0
 pytest==9.0.3
 tzdata==2025.2
+psutil==7.1.0

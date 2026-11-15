@@ -1,4 +1,4 @@
-# Prepara el worker en un equipo nuevo: entorno de Python, dependencias e idioma español de Tesseract.
+﻿# Prepara el worker en un equipo nuevo: entorno de Python, dependencias e idioma español de Tesseract.
 # Requisitos previos: Python 3.12 y Tesseract OCR instalados.
 $ErrorActionPreference = 'Stop'
 $raiz = $PSScriptRoot
