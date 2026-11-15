@@ -18,3 +18,9 @@ node_modules/
 .next/
 __pycache__/
 .venv/
+
+# Herramientas locales (entorno de graphify)
+.tools/
+
+# Grafo de graphify (local, se regenera)
+graphify-out/
