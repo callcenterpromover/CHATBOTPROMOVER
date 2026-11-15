@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { claseBotonSecundario } from "@/app/componentes";
 import { cerrarSesion } from "@/app/login/actions";
+import { modoSimulacion } from "@/lib/bot/canal";
 import { requerirSesion } from "@/lib/supabase/server";
 
 export default async function LayoutPanel({ children }: LayoutProps<"/">) {
@@ -15,6 +16,11 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
             <span className="text-sm text-slate-500">Lista de espera · Cali</span>
           </Link>
           <div className="flex items-center gap-3">
+            {operador && modoSimulacion() ? (
+              <Link href="/simulador" className="text-sm font-medium text-teal-700 hover:underline">
+                Simulador WhatsApp
+              </Link>
+            ) : null}
             {operador ? <span className="hidden text-sm text-slate-600 sm:inline">{operador.nombre}</span> : null}
             <form action={cerrarSesion}>
               <button type="submit" className={claseBotonSecundario}>

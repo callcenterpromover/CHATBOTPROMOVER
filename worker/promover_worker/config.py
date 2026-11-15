@@ -35,6 +35,8 @@ class Config:
     max_bytes: int
     max_intentos: int
     max_paginas_pdf: int
+    panel_url: str
+    worker_secret: str
 
 
 def cargar() -> Config:
@@ -57,4 +59,6 @@ def cargar() -> Config:
         max_bytes=int(valor("MAX_BYTES", str(15 * 1024 * 1024))),
         max_intentos=int(valor("MAX_INTENTOS", "3")),
         max_paginas_pdf=int(valor("MAX_PAGINAS_PDF", "15")),
+        panel_url=valor("PANEL_URL").rstrip("/"),
+        worker_secret=valor("WORKER_SECRET"),
     )
