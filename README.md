@@ -50,14 +50,36 @@ npm --prefix web run dev
 
 Abre http://localhost:3000. Las claves públicas están en `web/.env.local` (no se sube a git).
 
+## Roles y pantallas
+
+| Rol | Pantalla de inicio | Puede |
+|---|---|---|
+| `super_admin` | `/dashboard` | Todo, incluida la gestión de cualquier rol en `/admin/usuarios` |
+| `administrador` | `/dashboard` | Dashboard, lista de espera, asignar/reasignar/liberar casos de cualquiera, crear y gestionar usuarios operativos |
+| `operativo` | `/lista-espera` | Tomar casos de la bolsa, trabajar los de su cola, devolverlos; ver el dashboard en solo lectura |
+
+- El rol está en la tabla `operadores` (no en `user_metadata`, que el usuario puede editar).
+- La base aplica los permisos con RLS: un operativo solo modifica o cierra solicitudes asignadas a él.
+- Lista de espera: pestañas «Mi cola de trabajo» (`asignado_a` = yo), «Bolsa general» (`asignado_a` vacío)
+  y, para administradores, «En gestión por otros». Tomar una solicitud usa `tomar_solicitud`, que impide
+  que dos personas tomen la misma.
+- La asignación no cambia el `estado` documental de la solicitud (que calculan el bot y el worker); se
+  refleja en `asignado_a`, `fecha_asignacion` y `estado_concurrencia` (`LIBRE` / `BLOQUEADO`).
+- `metricas_diarias` acumula por día, sin datos de pacientes, los casos gestionados, minutos de espera,
+  casos por operador y por EPS. Se suma justo antes de borrar cada solicitud gestionada.
+- Prueba: `supabase/tests/roles_y_colas.sql` (no deja cambios).
+
 ## Dar acceso a una persona al panel
+
+Desde el panel: un administrador entra a **Usuarios** y crea la cuenta con una contraseña temporal.
+Requiere `SUPABASE_SECRET_KEY` en el servidor (Vercel). Alternativa manual:
 
 1. En Supabase → Authentication → Users → **Add user**: correo y contraseña (la define la persona).
 2. Habilitarla como operador (SQL Editor), cambiando el correo y el nombre:
 
 ```sql
-insert into public.operadores (user_id, nombre)
-select id, 'Nombre del auxiliar' from auth.users where email = 'correo@ejemplo.com';
+insert into public.operadores (user_id, nombre, rol)
+select id, 'Nombre del auxiliar', 'operativo' from auth.users where email = 'correo@ejemplo.com';
 ```
 
 3. En Authentication → Sign In / Providers, desactivar **Allow new users to sign up**.

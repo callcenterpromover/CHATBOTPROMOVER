@@ -156,6 +156,10 @@ export type FilaLista = {
   factores_origen: string | null;
   revision_humana: string;
   cita_previa_fecha: string | null;
+  asignado_a: string | null;
+  fecha_asignacion: string | null;
+  estado_concurrencia: "LIBRE" | "BLOQUEADO";
+  asignado_nombre: string | null;
   dias_espera: number;
   dias_para_vencer: number | null;
   alertas_abiertas: number;

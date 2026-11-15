@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { esRol, inicioPorRol } from "@/lib/roles";
 import { crearCliente } from "@/lib/supabase/server";
 import { COOKIE_ACTIVIDAD, opcionesActividad } from "@/lib/supabase/sesion";
 
@@ -11,11 +12,18 @@ export async function iniciarSesion(formData: FormData) {
   if (!email || !password) redirect("/login?error=1");
 
   const supabase = await crearCliente();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   // Mensaje genérico: no se revela si el correo existe.
-  if (error) redirect("/login?error=1");
+  if (error || !data.user) redirect("/login?error=1");
   (await cookies()).set(COOKIE_ACTIVIDAD, String(Date.now()), opcionesActividad);
-  redirect("/");
+
+  // Redirección según el rol: administradores al dashboard, operativos a la lista de espera.
+  const { data: op } = await supabase
+    .from("operadores")
+    .select("rol, activo")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+  redirect(op?.activo && esRol(op.rol) ? inicioPorRol(op.rol) : "/");
 }
 
 export async function cerrarSesion() {

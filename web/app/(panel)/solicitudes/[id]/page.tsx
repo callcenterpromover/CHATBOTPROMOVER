@@ -22,7 +22,9 @@ import {
   tonoEstadoDocumental,
   type FilaLista,
 } from "@/lib/catalogo";
+import { esAdmin } from "@/lib/roles";
 import { requerirSesion } from "@/lib/supabase/server";
+import { asignarSolicitud, devolverSolicitud, tomarSolicitud } from "../../lista-espera/actions";
 import {
   agregarObservacion,
   borrarObservacion,
@@ -37,12 +39,16 @@ const MENSAJES_OK: Record<string, string> = {
   corregido: "Dato corregido. El valor leído por OCR se conserva aparte.",
   alerta: "Alerta actualizada.",
   observacion: "Observaciones actualizadas.",
+  tomada: "La solicitud ya está en tu cola de trabajo.",
+  devuelta: "La solicitud volvió a la bolsa general.",
 };
 const MENSAJES_ERROR: Record<string, string> = {
   dato: "Hay un dato no válido. Revisa el formulario.",
   documento: "El documento solo puede tener letras y números (4 a 20), sin puntos ni comas.",
   observacion: "La observación debe tener entre 1 y 500 caracteres.",
   guardar: "No se pudo guardar. Intenta de nuevo.",
+  permiso: "No puedes modificar esta solicitud: no está asignada a ti. Tómala primero o pide que te la asignen.",
+  cola: "No se pudo cambiar la asignación. Puede que otra persona la haya modificado; recarga la página.",
   cierre:
     "No se pudo cerrar la solicitud: la eliminación no se completó y los datos siguen intactos. Intenta de nuevo; si persiste, avisa al responsable del sistema.",
 };
@@ -80,8 +86,9 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
-  const { supabase, operador } = await requerirSesion();
+  const { supabase, user, operador } = await requerirSesion();
   if (!operador) return null;
+  const admin = esAdmin(operador.rol);
 
   const [solicitud, campos, alertas, observaciones, historial, trabajos] = await Promise.all([
     supabase.from("lista_espera").select("*").eq("id", id).maybeSingle(),
@@ -93,14 +100,19 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
   ]);
   const s = solicitud.data as FilaLista | null;
   if (!s) notFound();
+  // Solo se edita lo que está asignado a uno (o siendo administrador). La base lo exige también (RLS).
+  const puedeEditar = admin || s.asignado_a === user.id;
+  const { data: operadores } = admin
+    ? await supabase.from("operadores").select("user_id, nombre").eq("activo", true).order("nombre")
+    : { data: [] as { user_id: string; nombre: string }[] };
 
-  const ok = typeof sp.ok === "string" ? MENSAJES_OK[sp.ok] : undefined;
-  const fallo = typeof sp.error === "string" ? MENSAJES_ERROR[sp.error] : undefined;
+  const ok = typeof sp.ok === "string" ? MENSAJES_OK[sp.ok] : sp.aviso === "asignada" ? "Solicitud asignada." : undefined;
+  const fallo = typeof sp.error === "string" ? MENSAJES_ERROR[sp.error] : sp.aviso === "error" ? MENSAJES_ERROR.cola : undefined;
 
   return (
     <div className="space-y-5">
       <div>
-        <Link href="/" className="text-sm text-teal-700 hover:underline">
+        <Link href={s.asignado_a === user.id ? "/lista-espera?tab=mia" : "/lista-espera?tab=bolsa"} className="text-sm text-teal-700 hover:underline">
           ← Lista de espera
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -129,6 +141,72 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
         </p>
       ) : null}
 
+      <section
+        aria-label="Asignación"
+        className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+          puedeEditar ? "border-teal-200 bg-teal-50 text-teal-900" : "border-amber-200 bg-amber-50 text-amber-900"
+        }`}
+      >
+        <p>
+          {s.asignado_a === user.id ? (
+            <>
+              <strong>En tu cola de trabajo</strong> desde {fechaHora(s.fecha_asignacion)}.
+            </>
+          ) : s.asignado_a ? (
+            <>
+              {puedeEditar ? null : <strong>Modo solo lectura. </strong>}
+              La está gestionando <strong>{s.asignado_nombre ?? "otra persona"}</strong> desde {fechaHora(s.fecha_asignacion)}.
+            </>
+          ) : (
+            <>
+              {puedeEditar ? null : <strong>Modo solo lectura. </strong>}
+              Está en la bolsa general, sin asignar.
+            </>
+          )}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {!s.asignado_a ? (
+            <form action={tomarSolicitud.bind(null, s.id)}>
+              <button type="submit" className={claseBoton}>
+                Tomar esta solicitud
+              </button>
+            </form>
+          ) : null}
+          {s.asignado_a && (s.asignado_a === user.id || admin) ? (
+            <form action={devolverSolicitud.bind(null, s.id, "ficha")}>
+              <button type="submit" className={claseBotonSecundario}>
+                {s.asignado_a === user.id ? "Devolver a la bolsa" : "Liberar"}
+              </button>
+            </form>
+          ) : null}
+          {admin ? (
+            <form action={asignarSolicitud.bind(null, s.id, `/solicitudes/${s.id}`)} className="flex gap-1">
+              <select
+                name="usuario"
+                required
+                defaultValue=""
+                aria-label="Asignar a"
+                className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-900"
+              >
+                <option value="" disabled>
+                  {s.asignado_a ? "Reasignar a…" : "Asignar a…"}
+                </option>
+                {(operadores ?? [])
+                  .filter((o) => o.user_id !== s.asignado_a)
+                  .map((o) => (
+                    <option key={o.user_id} value={o.user_id}>
+                      {o.nombre}
+                    </option>
+                  ))}
+              </select>
+              <button type="submit" className={claseBotonSecundario}>
+                Asignar
+              </button>
+            </form>
+          ) : null}
+        </div>
+      </section>
+
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <Tarjeta titulo={`Alertas (${(alertas.data ?? []).filter((a) => !a.resuelta).length} abiertas)`}>
@@ -148,11 +226,13 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
                           {a.detalle}
                         </p>
                       </div>
-                      <form action={marcarAlerta.bind(null, s.id, a.id, !a.resuelta)}>
-                        <button type="submit" className={claseBotonSecundario}>
-                          {a.resuelta ? "Reabrir" : "Marcar revisada"}
-                        </button>
-                      </form>
+                      {puedeEditar ? (
+                        <form action={marcarAlerta.bind(null, s.id, a.id, !a.resuelta)}>
+                          <button type="submit" className={claseBotonSecundario}>
+                            {a.resuelta ? "Reabrir" : "Marcar revisada"}
+                          </button>
+                        </form>
+                      ) : null}
                     </div>
                   </li>
                 ))}
@@ -262,6 +342,7 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
                           </Insignia>
                         </td>
                         <td className="py-2.5 align-top">
+                          {puedeEditar ? (
                           <form action={corregirCampo.bind(null, s.id, c.id)} className="flex gap-2">
                             <input
                               name="valor_corregido"
@@ -275,6 +356,9 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
                               Guardar
                             </button>
                           </form>
+                          ) : (
+                            <span className="font-mono text-xs">{c.valor_corregido ?? "—"}</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -288,6 +372,7 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
           </Tarjeta>
 
           <Tarjeta titulo="Observaciones">
+            {puedeEditar ? (
             <form action={agregarObservacion.bind(null, s.id)} className="space-y-2">
               <textarea
                 name="texto"
@@ -302,6 +387,7 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
                 Agregar observación
               </button>
             </form>
+            ) : null}
             {(observaciones.data ?? []).length > 0 ? (
               <ul className="mt-4 divide-y divide-slate-100">
                 {(observaciones.data ?? []).map((o) => (
@@ -310,11 +396,13 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
                       <p className="text-sm whitespace-pre-wrap text-slate-900">{o.texto}</p>
                       <p className="mt-0.5 text-xs text-slate-500">{fechaHora(o.creada_en)}</p>
                     </div>
-                    <form action={borrarObservacion.bind(null, s.id, o.id)}>
-                      <button type="submit" className="text-xs text-slate-500 hover:text-rose-700 hover:underline">
-                        Quitar
-                      </button>
-                    </form>
+                    {puedeEditar ? (
+                      <form action={borrarObservacion.bind(null, s.id, o.id)}>
+                        <button type="submit" className="text-xs text-slate-500 hover:text-rose-700 hover:underline">
+                          Quitar
+                        </button>
+                      </form>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -323,6 +411,8 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
         </div>
 
         <div className="space-y-5">
+          {puedeEditar ? (
+          <>
           <Tarjeta titulo="Gestión">
             <form action={guardarGestion.bind(null, s.id)} className="space-y-3">
               <Selector nombre="estado" titulo="Estado de la solicitud" mapa={ESTADOS} valor={s.estado} />
@@ -405,6 +495,9 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
               </form>
             </details>
           </Tarjeta>
+
+          </>
+          ) : null}
 
           <Tarjeta titulo="Documentos procesados">
             {(trabajos.data ?? []).length === 0 ? (

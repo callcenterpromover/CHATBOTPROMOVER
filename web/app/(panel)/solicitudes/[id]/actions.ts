@@ -19,9 +19,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Cada acción vuelve a comprobar sesión y operador; la base lo exige además con RLS.
 async function contexto(id: string) {
-  if (!UUID.test(id)) redirect("/");
+  if (!UUID.test(id)) redirect("/lista-espera");
   const { supabase, operador } = await requerirSesion();
-  if (!operador) redirect("/");
+  if (!operador) redirect("/login");
   return supabase;
 }
 
@@ -73,9 +73,11 @@ export async function guardarGestion(id: string, formData: FormData) {
     cambios.cita_previa_fecha = c || null;
   }
 
-  const { error } = await supabase.from("solicitudes").update(cambios).eq("id", id);
+  // RLS no devuelve error cuando la fila no es editable (solo 0 filas): se comprueba explícitamente.
+  const { data: filas, error } = await supabase.from("solicitudes").update(cambios).eq("id", id).select("id");
   if (error) volver(id, "error=guardar");
-  revalidatePath("/");
+  if (!filas?.length) volver(id, "error=permiso");
+  revalidatePath("/lista-espera");
   volver(id, "ok=guardado");
 }
 
@@ -83,25 +85,29 @@ export async function corregirCampo(id: string, campoId: number, formData: FormD
   const supabase = await contexto(id);
   const valor = String(formData.get("valor_corregido") ?? "").trim().slice(0, 200);
   if (!valor) volver(id, "error=dato");
-  const { error } = await supabase
+  const { data: filas, error } = await supabase
     .from("campos_extraidos")
     .update({ valor_corregido: valor, verificacion: "CORREGIDO_HUMANO" })
     .eq("id", campoId)
-    .eq("solicitud_id", id);
+    .eq("solicitud_id", id)
+    .select("id");
   if (error) volver(id, "error=guardar");
-  revalidatePath("/");
+  if (!filas?.length) volver(id, "error=permiso");
+  revalidatePath("/lista-espera");
   volver(id, "ok=corregido");
 }
 
 export async function marcarAlerta(id: string, alertaId: number, resuelta: boolean) {
   const supabase = await contexto(id);
-  const { error } = await supabase
+  const { data: filas, error } = await supabase
     .from("alertas")
     .update({ resuelta })
     .eq("id", alertaId)
-    .eq("solicitud_id", id);
+    .eq("solicitud_id", id)
+    .select("id");
   if (error) volver(id, "error=guardar");
-  revalidatePath("/");
+  if (!filas?.length) volver(id, "error=permiso");
+  revalidatePath("/lista-espera");
   volver(id, "ok=alerta");
 }
 
@@ -116,12 +122,14 @@ export async function agregarObservacion(id: string, formData: FormData) {
 
 export async function borrarObservacion(id: string, observacionId: number) {
   const supabase = await contexto(id);
-  const { error } = await supabase
+  const { data: filas, error } = await supabase
     .from("observaciones")
     .delete()
     .eq("id", observacionId)
-    .eq("solicitud_id", id);
+    .eq("solicitud_id", id)
+    .select("id");
   if (error) volver(id, "error=guardar");
+  if (!filas?.length) volver(id, "error=permiso");
   volver(id, "ok=observacion");
 }
 
@@ -145,6 +153,7 @@ export async function cerrarSolicitud(id: string, formData: FormData) {
   const { count } = await supabase.from("solicitudes").select("id", { count: "exact", head: true }).eq("id", id);
   if (count !== 0) volver(id, "error=cierre");
 
-  revalidatePath("/");
-  redirect("/?cerrada=1");
+  revalidatePath("/lista-espera");
+  revalidatePath("/dashboard");
+  redirect("/lista-espera?cerrada=1");
 }
