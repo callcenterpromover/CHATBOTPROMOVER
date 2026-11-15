@@ -28,7 +28,7 @@ export default async function PaginaSimulador({ searchParams }: PageProps<"/simu
   if (!operador) return null;
 
   const sp = await searchParams;
-  const tel = typeof sp.tel === "string" && /^\d{8,15}$/.test(sp.tel) ? sp.tel : "573000000099";
+  const tel = typeof sp.tel === "string" && /^5730000000\d{2}$/.test(sp.tel) ? sp.tel : "573000000099";
   const db = crearClienteAdmin();
   const [{ data: mensajes }, { data: conv }] = await Promise.all([
     db.from("mensajes_simulador").select("id, direccion, texto, creado_en").eq("telefono", tel).order("id").limit(300),
@@ -149,8 +149,8 @@ export default async function PaginaSimulador({ searchParams }: PageProps<"/simu
 
         <form method="get" className="rounded-xl border border-slate-200 bg-white p-4">
           <label className="block text-xs text-slate-500">
-            Simular otro número
-            <input name="tel" defaultValue={tel} pattern="\d{8,15}" className={`${claseCampo} mt-1 font-mono`} />
+            Simular otro número (ficticio: 5730000000 + 2 dígitos)
+            <input name="tel" defaultValue={tel} pattern="5730000000\d{2}" className={`${claseCampo} mt-1 font-mono`} />
           </label>
           <button type="submit" className={`${claseBotonSecundario} mt-2 w-full`}>
             Cambiar

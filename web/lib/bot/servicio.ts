@@ -7,6 +7,8 @@ import { enviar } from "./canal";
 import { M } from "./mensajes";
 import { ESTADO_INICIAL, procesar, type Accion, type Canal, type Datos, type Entrada, type Estado, type Paso } from "./motor";
 
+const MAX_DOCUMENTOS_POR_SOLICITUD = 30;
+
 type Conversacion = { telefono: string; solicitud_id: string | null; paso: Paso; datos: Datos };
 
 async function limpiarAntiguos(db: SupabaseClient) {
@@ -73,6 +75,16 @@ async function aplicar(
       }
       case "encolar": {
         if (!solicitudId) break;
+        // Tope por solicitud: evita que alguien llene la cola (y el equipo de la sede) con archivos.
+        const { count } = await db
+          .from("trabajos_ocr")
+          .select("id", { count: "exact", head: true })
+          .eq("solicitud_id", solicitudId);
+        if ((count ?? 0) >= MAX_DOCUMENTOS_POR_SOLICITUD) {
+          await alertar(db, solicitudId, "DEMASIADOS_DOCUMENTOS",
+            `La solicitud alcanzó el máximo de ${MAX_DOCUMENTOS_POR_SOLICITUD} documentos y no se procesarán más. Revisar el chat en WhatsApp.`);
+          break;
+        }
         const { error } = await db
           .from("trabajos_ocr")
           .insert({ solicitud_id: solicitudId, media_id: a.mediaId, tipo_documento: a.tipoDocumento });

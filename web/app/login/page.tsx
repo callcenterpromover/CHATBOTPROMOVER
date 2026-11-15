@@ -2,7 +2,7 @@ import { claseBoton, claseCampo } from "@/app/componentes";
 import { iniciarSesion } from "./actions";
 
 export default async function PaginaLogin({ searchParams }: PageProps<"/login">) {
-  const { error } = await searchParams;
+  const { error, expirada } = await searchParams;
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
@@ -14,6 +14,11 @@ export default async function PaginaLogin({ searchParams }: PageProps<"/login">)
         </div>
 
         <form action={iniciarSesion} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
+          {expirada ? (
+            <p role="status" className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              La sesión se cerró por inactividad. Ingresa de nuevo.
+            </p>
+          ) : null}
           {error ? (
             <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">
               Correo o contraseña incorrectos.

@@ -15,6 +15,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
+from PIL import Image
 
 from . import fuentes, ocr
 from .cola import Cola
@@ -58,7 +59,9 @@ def procesar(trabajo: dict, cola: Cola, cfg: Config) -> str:
         except fuentes.MedioNoDisponible:
             resultado = _resultado_de_reenvio(trabajo, "medio_no_disponible")
             return resultado["estado"] if cola.guardar(trabajo["id"], resultado) else "DESCARTADO"
-        except (fuentes.FormatoNoSoportado, ValueError, OSError):
+        except (fuentes.FormatoNoSoportado, ValueError, OSError, Image.DecompressionBombError,
+                Image.DecompressionBombWarning, RuntimeError):
+            # RuntimeError: Tesseract superó el tiempo máximo (pytesseract lo informa así).
             # OSError/ValueError: imagen o PDF dañado, protegido o fuera de límites.
             resultado = _resultado_de_reenvio(trabajo, "archivo_no_procesable")
             return resultado["estado"] if cola.guardar(trabajo["id"], resultado) else "DESCARTADO"

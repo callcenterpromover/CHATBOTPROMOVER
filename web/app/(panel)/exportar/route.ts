@@ -18,6 +18,11 @@ export async function GET() {
   const { data, error } = await supabase.from("lista_espera").select("*").order("creada_en", { ascending: true });
   if (error) return new NextResponse("No se pudo generar la exportación", { status: 500 });
 
+  // Toda exportación queda en la auditoría (quién, cuándo y cuántas filas). Si no se puede
+  // registrar, no se entrega el archivo.
+  const { error: errorAuditoria } = await supabase.rpc("registrar_exportacion", { p_filas: data?.length ?? 0 });
+  if (errorAuditoria) return new NextResponse("No se pudo registrar la exportación", { status: 500 });
+
   const encabezado = [
     "Solicitud",
     "Fecha de inicio",

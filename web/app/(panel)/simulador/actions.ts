@@ -9,7 +9,9 @@ import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { requerirSesion } from "@/lib/supabase/server";
 import { DOCUMENTOS_FICTICIOS } from "./documentos";
 
-const TELEFONO = /^\d{8,15}$/;
+// Solo números ficticios (5730000000xx): el simulador nunca puede tocar la conversación de un
+// paciente real que escriba por WhatsApp.
+const TELEFONO = /^5730000000\d{2}$/;
 
 async function preparar(telefono: string) {
   if (!modoSimulacion()) redirect("/");

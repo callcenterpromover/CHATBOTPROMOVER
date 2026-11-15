@@ -31,6 +31,8 @@ Variables de servidor en Vercel (nunca con `NEXT_PUBLIC_`): `SUPABASE_SECRET_KEY
 Pendiente legal: la Ley 1581 exige conservar prueba de la autorización, pero el cierre borra todo,
 incluida `consentimiento_en`. Definir con jurídica cómo conservarla sin datos clínicos.
 
+Controles de seguridad, pendientes antes de datos reales y respuesta a incidentes: [SEGURIDAD.md](SEGURIDAD.md).
+
 ## Reglas que no se rompen
 
 - Las imágenes y documentos **nunca** se suben a Supabase ni a Vercel.

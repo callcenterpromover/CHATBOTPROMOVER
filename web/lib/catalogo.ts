@@ -188,6 +188,15 @@ export function documentoOculto(doc: string | null) {
   return doc.length <= 4 ? doc : `••••${doc.slice(-4)}`;
 }
 
+/** Texto normalizado para el buscador local del panel (sin tildes, en minúsculas). */
+export function textoBusqueda(nombre: string | null, documento: string | null) {
+  return `${nombre ?? ""} ${documento ?? ""}`
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
 export function codigoSolicitud(numero: number) {
   return `S-${String(numero).padStart(4, "0")}`;
 }

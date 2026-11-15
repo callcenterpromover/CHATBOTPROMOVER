@@ -18,8 +18,14 @@ export function GET(request: NextRequest) {
   return new NextResponse("Prohibido", { status: 403 });
 }
 
+const MAX_CUERPO = 512 * 1024; // los webhooks de Meta pesan pocos KB
+
 export async function POST(request: NextRequest) {
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_CUERPO) {
+    return new NextResponse("Demasiado grande", { status: 413 });
+  }
   const cuerpo = await request.text();
+  if (cuerpo.length > MAX_CUERPO) return new NextResponse("Demasiado grande", { status: 413 });
   if (!firmaValida(cuerpo, request.headers.get("x-hub-signature-256"), process.env.META_APP_SECRET)) {
     return new NextResponse("Firma inválida", { status: 401 });
   }

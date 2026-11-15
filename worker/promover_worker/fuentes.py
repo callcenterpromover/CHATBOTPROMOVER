@@ -5,8 +5,10 @@ El archivo viene directo de Meta (Graph API). Solo hay conexiones salientes.
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -34,6 +36,20 @@ def detectar_tipo(ruta: Path) -> str:
     raise FormatoNoSoportado
 
 
+# Meta entrega los medios desde estos dominios. Una URL fuera de ellos se rechaza: el token de
+# WhatsApp nunca debe enviarse a otro servidor.
+_DOMINIOS_META = (".fbsbx.com", ".facebook.com", ".whatsapp.net", ".fbcdn.net")
+
+
+def url_de_meta_valida(url: str) -> bool:
+    try:
+        u = urlparse(url)
+    except ValueError:
+        return False
+    host = (u.hostname or "").lower()
+    return u.scheme == "https" and any(host == d[1:] or host.endswith(d) for d in _DOMINIOS_META)
+
+
 def descargar(media_id: str, trabajo_id: int, cfg: Config) -> Path:
     cfg.tmp_dir.mkdir(parents=True, exist_ok=True)
     destino = cfg.tmp_dir / f"{trabajo_id}.bin"
@@ -48,8 +64,12 @@ def descargar(media_id: str, trabajo_id: int, cfg: Config) -> Path:
         shutil.copyfile(origen, destino)
         return destino
 
+    # Los IDs de medios de Meta son numéricos: cualquier otra cosa no se envía a la API.
+    if not re.fullmatch(r"\d{5,30}", media_id) or not cfg.meta_token:
+        raise MedioNoDisponible
+
     cabeceras = {"Authorization": f"Bearer {cfg.meta_token}"}
-    with httpx.Client(timeout=60, headers=cabeceras, follow_redirects=True) as http:
+    with httpx.Client(timeout=60, headers=cabeceras, follow_redirects=False) as http:
         meta = http.get(f"https://graph.facebook.com/{cfg.meta_api_version}/{media_id}")
         if meta.status_code in (400, 404):
             raise MedioNoDisponible
@@ -57,7 +77,10 @@ def descargar(media_id: str, trabajo_id: int, cfg: Config) -> Path:
         info = meta.json()
         if int(info.get("file_size", 0)) > cfg.max_bytes:
             raise FormatoNoSoportado
-        with http.stream("GET", info["url"]) as respuesta:
+        url = str(info.get("url", ""))
+        if not url_de_meta_valida(url):
+            raise MedioNoDisponible
+        with http.stream("GET", url) as respuesta:
             if respuesta.status_code in (401, 403, 404):
                 raise MedioNoDisponible
             respuesta.raise_for_status()

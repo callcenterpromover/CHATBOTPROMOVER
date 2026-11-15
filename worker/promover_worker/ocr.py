@@ -6,6 +6,7 @@ Devuelve el texto solo en memoria: nunca se escribe en disco ni en logs.
 from __future__ import annotations
 
 import os
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,7 +15,12 @@ from PIL import Image, ImageFilter, ImageOps, ImageStat
 
 from .config import Config
 
-Image.MAX_IMAGE_PIXELS = 60_000_000  # evita imágenes gigantes que agoten la memoria
+# Límites contra archivos maliciosos o absurdos (una imagen "bomba" que se expande a gigabytes,
+# un PDF con páginas enormes): se rechazan en vez de agotar la memoria del equipo de la sede.
+Image.MAX_IMAGE_PIXELS = 60_000_000
+warnings.simplefilter("error", Image.DecompressionBombWarning)
+TIEMPO_MAX_OCR = 120  # segundos por llamada a Tesseract
+LADO_MAX_PDF_PX = 4000  # lado máximo al convertir una página de PDF en imagen
 
 
 @dataclass
@@ -58,7 +64,7 @@ def _nitidez(img: Image.Image) -> float:
 def _leer(img: Image.Image, cfg: Config) -> tuple[str, float, int]:
     datos = pytesseract.image_to_data(
         img, lang="spa", config="--psm 6",
-        output_type=pytesseract.Output.DICT,
+        output_type=pytesseract.Output.DICT, timeout=TIEMPO_MAX_OCR,
     )
     lineas: dict[tuple, list[str]] = {}
     confianzas: list[float] = []
@@ -77,7 +83,7 @@ def _leer(img: Image.Image, cfg: Config) -> tuple[str, float, int]:
 def _angulo_osd(img: Image.Image, cfg: Config) -> int | None:
     try:
         osd = pytesseract.image_to_osd(
-            img, config="--psm 0", output_type=pytesseract.Output.DICT
+            img, config="--psm 0", output_type=pytesseract.Output.DICT, timeout=TIEMPO_MAX_OCR
         )
         return int(osd.get("rotate", 0)) % 360
     except Exception:
@@ -125,7 +131,9 @@ def leer_archivo(ruta: Path, tipo: str, cfg: Config) -> list[Pagina]:
             if len(texto) >= 80:  # PDF con texto seleccionable: no necesita OCR
                 paginas.append(Pagina(texto=texto, confianza=99.0, palabras=len(texto.split()), nitidez=99.0))
             else:
-                imagen = pagina.render(scale=3).to_pil()  # ~216 ppp
+                ancho, alto = pagina.get_size()  # en puntos (1/72 de pulgada)
+                escala = min(3.0, LADO_MAX_PDF_PX / max(ancho, alto, 1))  # ~216 ppp, con tope
+                imagen = pagina.render(scale=escala).to_pil()
                 paginas.append(leer_imagen(imagen, cfg))
                 imagen.close()
             pagina.close()

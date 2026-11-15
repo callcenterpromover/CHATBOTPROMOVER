@@ -12,10 +12,12 @@ import {
   etiqueta,
   fecha,
   tonoEstado,
+  textoBusqueda,
   tonoEstadoDocumental,
   type FilaLista,
 } from "@/lib/catalogo";
 import { requerirSesion } from "@/lib/supabase/server";
+import { BuscadorLocal } from "./buscador-local";
 
 function uno(v: string | string[] | undefined) {
   return Array.isArray(v) ? v[0] : v;
@@ -47,8 +49,8 @@ export default async function PaginaLista({ searchParams }: PageProps<"/">) {
   const { supabase, operador } = await requerirSesion();
   if (!operador) return null;
 
+  // La búsqueda por nombre o documento es local (BuscadorLocal): nunca llega a la URL.
   const f = {
-    q: (uno(sp.q) ?? "").trim().slice(0, 60),
     eps: uno(sp.eps),
     cat: uno(sp.cat),
     estado: uno(sp.estado),
@@ -67,9 +69,6 @@ export default async function PaginaLista({ searchParams }: PageProps<"/">) {
   if (esValor(FACTORES, f.factor)) consulta = consulta.contains("factores", [f.factor]);
   if (f.alerta) consulta = consulta.gt("alertas_abiertas", 0);
   if (f.vence) consulta = consulta.lte("dias_para_vencer", 7);
-  // Solo letras, números y espacios: evita inyectar operadores en el filtro.
-  const q = f.q.replace(/[^\p{L}\p{N} ]/gu, "");
-  if (q) consulta = consulta.or(`nombre.ilike.%${q}%,documento.ilike.%${q}%`);
   consulta =
     f.orden === "vencimiento"
       ? consulta.order("orden_vencimiento", { ascending: true, nullsFirst: false })
@@ -82,7 +81,7 @@ export default async function PaginaLista({ searchParams }: PageProps<"/">) {
   const filas = (data ?? []) as FilaLista[];
   const resumen = todas ?? [];
   const hayFiltros = Boolean(
-    q || f.eps || f.cat || f.estado || f.doc || f.factor || f.alerta || f.vence || f.orden !== "espera",
+    f.eps || f.cat || f.estado || f.doc || f.factor || f.alerta || f.vence || f.orden !== "espera",
   );
   const cerrada = uno(sp.cerrada);
 
@@ -124,10 +123,7 @@ export default async function PaginaLista({ searchParams }: PageProps<"/">) {
 
       <form method="get" className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-          <label className="col-span-2 text-xs text-slate-500">
-            Buscar
-            <input name="q" defaultValue={f.q} placeholder="Nombre o documento" className={`${claseCampo} mt-1`} />
-          </label>
+          <BuscadorLocal />
           <label className="text-xs text-slate-500">
             EPS
             <select name="eps" defaultValue={f.eps ?? ""} className={`${claseCampo} mt-1`}>
@@ -222,7 +218,11 @@ export default async function PaginaLista({ searchParams }: PageProps<"/">) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filas.map((s) => (
-                <tr key={s.id} className="transition-colors hover:bg-slate-50">
+                <tr
+                  key={s.id}
+                  data-busqueda={textoBusqueda(s.nombre, s.documento)}
+                  className="transition-colors hover:bg-slate-50"
+                >
                   <td className="px-4 py-3 align-top">
                     <Link href={`/solicitudes/${s.id}`} className="font-medium text-teal-700 hover:underline">
                       {codigoSolicitud(s.numero)}
