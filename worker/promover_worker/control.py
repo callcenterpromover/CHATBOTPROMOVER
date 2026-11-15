@@ -97,7 +97,18 @@ def apagar(espera_segundos: float = 45) -> str:
             pass
     psutil.wait_procs(procesos_worker(), timeout=5)
     limpiar_marca()
+    _registrar_apagado()  # el proceso no alcanzó a avisar al panel
     return "forzado"
+
+
+def _registrar_apagado() -> None:
+    try:
+        from .cola import Cola
+        from .config import cargar
+
+        Cola(cargar()).apagado()
+    except Exception:  # noqa: BLE001 - sin conexión: el panel lo verá «sin señal» a los 2 min
+        pass
 
 
 def esperar(segundos: float) -> bool:

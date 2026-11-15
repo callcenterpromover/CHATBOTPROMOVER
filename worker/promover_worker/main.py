@@ -128,8 +128,8 @@ def ciclo(cola: Cola, cfg: Config, una_vez: bool) -> int:
         if not una_vez and control.detencion_solicitada():
             log.info("worker_detenido_por_usuario")
             return procesados
-        # Señal de vida cada minuto (se ve en el dashboard). Si falla, se reintenta en la próxima vuelta.
-        if time.monotonic() - ultimo_latido >= 60:
+        # Señal de vida cada 30 s (se ve en el dashboard). Si falla, se reintenta en la próxima vuelta.
+        if time.monotonic() - ultimo_latido >= 30:
             try:
                 cola.latido(procesados)
                 ultimo_latido = time.monotonic()
@@ -212,6 +212,12 @@ def main() -> None:
     cola.latido(0, inicio=True)
     log.info("worker_iniciado fuente_local=%s", cfg.permitir_fuente_local)
     n = ciclo(cola, cfg, args.una_vez)
+    # Apagado normal (botón o fin de --una-vez): se avisa al panel. Si el proceso se cae sin pasar por
+    # aquí, el panel lo verá como «sin señal» a los 2 minutos.
+    try:
+        cola.apagado()
+    except httpx.HTTPError:
+        log.warning("no_se_pudo_registrar_apagado")
     log.info("worker_terminado procesados=%d", n)
 
 

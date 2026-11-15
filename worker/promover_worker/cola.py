@@ -78,8 +78,18 @@ class Cola:
         }
         if inicio:
             fila["iniciado_en"] = fila["ultimo_latido"]
+            fila["detenido_en"] = None
         r = self.http.post(
             "/estado_worker", params={"on_conflict": "id"}, json=fila,
+            headers={"Prefer": "resolution=merge-duplicates"},
+        )
+        r.raise_for_status()
+
+    def apagado(self) -> None:
+        """Registra que el worker se apagó a propósito (el panel lo muestra como «Apagado»)."""
+        r = self.http.post(
+            "/estado_worker", params={"on_conflict": "id"},
+            json={"id": 1, "detenido_en": datetime.now(timezone.utc).isoformat()},
             headers={"Prefer": "resolution=merge-duplicates"},
         )
         r.raise_for_status()

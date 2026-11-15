@@ -3,6 +3,7 @@ import { Tarjeta } from "@/app/componentes";
 import { EPS, etiqueta } from "@/lib/catalogo";
 import { esAdmin } from "@/lib/roles";
 import { requerirSesion } from "@/lib/supabase/server";
+import { AutoRefresco } from "@/components/AutoRefresco";
 
 // Indicadores. Lo histórico sale de `metricas_diarias` (agregados anónimos que se suman justo
 // antes de borrar cada solicitud gestionada); lo actual, de las solicitudes activas.
@@ -30,7 +31,7 @@ const ALERTAS_DOCUMENTALES: Record<string, string> = {
 function fechasDeReferencia() {
   const ahora = new Date();
   const formato = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "America/Bogota" });
-  return { ahora, hoy: formato(ahora), hace30: formato(new Date(ahora.getTime() - 29 * 86_400_000)) };
+  return { hoy: formato(ahora), hace30: formato(new Date(ahora.getTime() - 29 * 86_400_000)) };
 }
 
 function duracion(minutos: number | null) {
@@ -92,7 +93,7 @@ export default async function PaginaDashboard() {
   const { supabase, operador } = await requerirSesion();
   if (!operador) return null;
 
-  const { hoy, hace30, ahora } = fechasDeReferencia();
+  const { hoy, hace30 } = fechasDeReferencia();
 
   const admin = esAdmin(operador.rol);
   // Totales anónimos para todos; el detalle por cola (quién tiene qué) solo para administradores.
@@ -116,12 +117,29 @@ export default async function PaginaDashboard() {
     casos_con_alerta_documental?: number;
     ocr_pendientes?: number;
     ocr_con_error?: number;
-    worker_ultimo_latido?: string | null;
+    worker_estado?: "ENCENDIDO" | "APAGADO" | "SIN_SENAL" | "NUNCA";
+    worker_minutos_desde?: number | null;
     worker_equipo?: string | null;
   };
-  const latido = r.worker_ultimo_latido ? new Date(r.worker_ultimo_latido) : null;
-  const minutosSinSenal = latido ? (ahora.getTime() - latido.getTime()) / 60_000 : null;
-  const workerActivo = minutosSinSenal !== null && minutosSinSenal < 3;
+  // El estado lo calcula la base con su propia hora: ENCENDIDO, APAGADO (con el botón) o SIN_SENAL.
+  const estadoWorker = r.worker_estado ?? "NUNCA";
+  const hace = r.worker_minutos_desde == null ? "" : duracion(Number(r.worker_minutos_desde));
+  const desde = r.worker_equipo ? ` en ${r.worker_equipo}` : "";
+  const textoWorker = {
+    ENCENDIDO: { titulo: "funcionando", detalle: `última señal hace ${hace}${desde}.` },
+    APAGADO: { titulo: "apagado", detalle: `se apagó hace ${hace}${desde}. Los documentos quedan en cola hasta que se encienda.` },
+    SIN_SENAL: {
+      titulo: "sin señal",
+      detalle: `última señal hace ${hace}${desde}. Puede que el equipo esté apagado o sin internet. Los documentos quedan en cola.`,
+    },
+    NUNCA: { titulo: "sin conectar", detalle: "todavía no se ha encendido nunca." },
+  }[estadoWorker];
+  const tonoWorker =
+    estadoWorker === "ENCENDIDO"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : estadoWorker === "APAGADO"
+        ? "border-slate-200 bg-slate-100 text-slate-700"
+        : "border-amber-200 bg-amber-50 text-amber-900";
 
   const filas = (metricas ?? []) as FilaMetrica[];
   const deHoy = filas.find((f) => f.fecha === hoy);
@@ -162,6 +180,7 @@ export default async function PaginaDashboard() {
 
   return (
     <div className="space-y-5">
+      <AutoRefresco segundos={20} />
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
         <p className="mt-0.5 text-sm text-slate-500">
@@ -172,17 +191,16 @@ export default async function PaginaDashboard() {
 
       <section
         aria-label="Lector de documentos"
-        className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
-          workerActivo ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"
-        }`}
+        className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${tonoWorker}`}
       >
         <p>
-          <span aria-hidden="true">🖨️ </span>
-          <strong>Lector de documentos (OCR): {workerActivo ? "funcionando" : "sin señal"}</strong>
-          {latido
-            ? ` · última señal ${duracion(minutosSinSenal)} atrás${r.worker_equipo ? ` desde ${r.worker_equipo}` : ""}`
-            : " · todavía no se ha conectado nunca"}
-          {!workerActivo ? ". Los documentos quedan en cola hasta que vuelva." : ""}
+          <span
+            aria-hidden="true"
+            className={`mr-2 inline-block size-2.5 rounded-full align-middle ${
+              estadoWorker === "ENCENDIDO" ? "bg-emerald-500" : estadoWorker === "APAGADO" ? "bg-slate-400" : "bg-amber-500"
+            }`}
+          />
+          <strong>Lector de documentos (OCR): {textoWorker.titulo}</strong> · {textoWorker.detalle}
         </p>
         <p className="tabular-nums">
           {Number(r.ocr_pendientes ?? 0)} en cola

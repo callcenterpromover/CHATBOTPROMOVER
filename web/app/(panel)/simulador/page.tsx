@@ -6,7 +6,7 @@ import { codigoSolicitud, etiqueta, ESTADOS } from "@/lib/catalogo";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { requerirSesion } from "@/lib/supabase/server";
 import { enviarAudio, enviarDocumento, enviarTexto, reiniciar } from "./actions";
-import { AutoRefresco } from "./auto-refresco";
+import { AutoRefresco } from "@/components/AutoRefresco";
 import { Notificaciones } from "@/components/Notificaciones";
 import { DOCUMENTOS_FICTICIOS } from "./documentos";
 
