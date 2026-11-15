@@ -4,6 +4,7 @@ import { EPS, etiqueta } from "@/lib/catalogo";
 import { esAdmin } from "@/lib/roles";
 import { requerirSesion } from "@/lib/supabase/server";
 import { AutoRefresco } from "@/components/AutoRefresco";
+import { TiempoTranscurrido } from "@/components/TiempoTranscurrido";
 
 // Indicadores. Lo histórico sale de `metricas_diarias` (agregados anónimos que se suman justo
 // antes de borrar cada solicitud gestionada); lo actual, de las solicitudes activas.
@@ -123,16 +124,29 @@ export default async function PaginaDashboard() {
   };
   // El estado lo calcula la base con su propia hora: ENCENDIDO, APAGADO (con el botón) o SIN_SENAL.
   const estadoWorker = r.worker_estado ?? "NUNCA";
-  const hace = r.worker_minutos_desde == null ? "" : duracion(Number(r.worker_minutos_desde));
+  const segundosDesde = r.worker_minutos_desde == null ? null : Number(r.worker_minutos_desde) * 60;
   const desde = r.worker_equipo ? ` en ${r.worker_equipo}` : "";
+  const hace =
+    segundosDesde === null ? null : (
+      <>
+        hace <TiempoTranscurrido segundosIniciales={segundosDesde} />
+      </>
+    );
   const textoWorker = {
-    ENCENDIDO: { titulo: "funcionando", detalle: `última señal hace ${hace}${desde}.` },
-    APAGADO: { titulo: "apagado", detalle: `se apagó hace ${hace}${desde}. Los documentos quedan en cola hasta que se encienda.` },
+    ENCENDIDO: { titulo: "funcionando", detalle: <>última señal {hace}{desde}.</> },
+    APAGADO: {
+      titulo: "apagado",
+      detalle: <>se apagó {hace}{desde}. Los documentos quedan en cola hasta que se encienda.</>,
+    },
     SIN_SENAL: {
       titulo: "sin señal",
-      detalle: `última señal hace ${hace}${desde}. Puede que el equipo esté apagado o sin internet. Los documentos quedan en cola.`,
+      detalle: (
+        <>
+          última señal {hace}{desde}. Puede que el equipo esté apagado o sin internet. Los documentos quedan en cola.
+        </>
+      ),
     },
-    NUNCA: { titulo: "sin conectar", detalle: "todavía no se ha encendido nunca." },
+    NUNCA: { titulo: "sin conectar", detalle: <>todavía no se ha encendido nunca.</> },
   }[estadoWorker];
   const tonoWorker =
     estadoWorker === "ENCENDIDO"
