@@ -27,6 +27,14 @@ begin
   r := r || ' | op1_toma=' || public.tomar_solicitud(v_id);
   perform set_config('request.jwt.claims', json_build_object('sub', v_op2, 'role', 'authenticated')::text, true);
   r := r || ' op2_toma=' || public.tomar_solicitud(v_id);
+  -- op2 no ve la cola de op1 (ni la solicitud ni sus alertas), pero sí los totales anónimos
+  select count(*) into v_n from public.solicitudes where id = v_id;
+  r := r || ' op2_ve_ajena=' || v_n;
+  select count(*) into v_n from public.lista_espera where asignado_a = v_op1;
+  r := r || ' op2_ve_cola_op1=' || v_n;
+  select count(*) into v_n from public.alertas where solicitud_id = v_id;
+  r := r || ' op2_ve_alertas_ajenas=' || v_n;
+  r := r || ' op2_resumen_total>0=' || ((public.resumen_espera() ->> 'total')::int > 0);
   update public.solicitudes set nombre = 'X' where id = v_id;
   get diagnostics v_n = row_count;
   r := r || ' op2_edita_ajena=' || v_n;

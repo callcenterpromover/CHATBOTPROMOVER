@@ -59,7 +59,9 @@ Abre http://localhost:3000. Las claves públicas están en `web/.env.local` (no 
 | `operativo` | `/lista-espera` | Tomar casos de la bolsa, trabajar los de su cola, devolverlos; ver el dashboard en solo lectura |
 
 - El rol está en la tabla `operadores` (no en `user_metadata`, que el usuario puede editar).
-- La base aplica los permisos con RLS: un operativo solo modifica o cierra solicitudes asignadas a él.
+- La base aplica los permisos con RLS: un operativo solo **ve** la bolsa general y su propia cola (no las
+  colas de otras personas) y solo modifica o cierra solicitudes asignadas a él. El dashboard le muestra
+  totales anónimos (`resumen_espera`), sin el detalle de quién tiene cada caso.
 - Lista de espera: pestañas «Mi cola de trabajo» (`asignado_a` = yo), «Bolsa general» (`asignado_a` vacío)
   y, para administradores, «En gestión por otros». Tomar una solicitud usa `tomar_solicitud`, que impide
   que dos personas tomen la misma.

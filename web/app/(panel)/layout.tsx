@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { claseBotonSecundario } from "@/app/componentes";
 import { cerrarSesion } from "@/app/login/actions";
+import { CargaAlEnviar } from "@/components/PantallaCarga";
 import { modoSimulacion } from "@/lib/bot/canal";
 import { ROLES, esAdmin, inicioPorRol } from "@/lib/roles";
 import { requerirSesion } from "@/lib/supabase/server";
@@ -37,6 +38,7 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
               </span>
             ) : null}
             <form action={cerrarSesion}>
+              <CargaAlEnviar mensaje="Cerrando sesión…" />
               <button type="submit" className={claseBotonSecundario}>
                 Salir
               </button>

@@ -7,6 +7,7 @@ import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { requerirSesion } from "@/lib/supabase/server";
 import { enviarAudio, enviarDocumento, enviarTexto, reiniciar } from "./actions";
 import { AutoRefresco } from "./auto-refresco";
+import { Notificaciones } from "@/components/Notificaciones";
 import { DOCUMENTOS_FICTICIOS } from "./documentos";
 
 const fmtHora = new Intl.DateTimeFormat("es-CO", { timeZone: "America/Bogota", timeStyle: "short" });
@@ -41,6 +42,13 @@ export default async function PaginaSimulador({ searchParams }: PageProps<"/simu
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
       <AutoRefresco />
+      <Notificaciones
+        avisos={
+          sp.error
+            ? [{ tono: "error", texto: "El bot no pudo procesar el último mensaje. Revisa la configuración (clave secreta en el servidor)." }]
+            : []
+        }
+      />
       <section className="flex h-[calc(100vh-10rem)] min-h-[480px] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-teal-700 px-4 py-3 text-white">
           <div>
@@ -80,11 +88,6 @@ export default async function PaginaSimulador({ searchParams }: PageProps<"/simu
         </div>
 
         <footer className="border-t border-slate-200 bg-slate-50 p-3">
-          {sp.error ? (
-            <p role="alert" className="mb-2 rounded-md bg-rose-50 px-3 py-1.5 text-xs text-rose-800">
-              El bot no pudo procesar el último mensaje. Revisa la configuración (clave secreta en el servidor).
-            </p>
-          ) : null}
           <form action={enviarTexto.bind(null, tel)} className="flex gap-2">
             <input
               name="texto"

@@ -23,6 +23,7 @@ import {
   type FilaLista,
 } from "@/lib/catalogo";
 import { esAdmin } from "@/lib/roles";
+import { Notificaciones } from "@/components/Notificaciones";
 import { requerirSesion } from "@/lib/supabase/server";
 import { asignarSolicitud, devolverSolicitud, tomarSolicitud } from "../../lista-espera/actions";
 import {
@@ -130,16 +131,12 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
         </p>
       </div>
 
-      {ok ? (
-        <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          {ok}
-        </p>
-      ) : null}
-      {fallo ? (
-        <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-          {fallo}
-        </p>
-      ) : null}
+      <Notificaciones
+        avisos={[
+          ...(ok ? [{ tono: "ok" as const, texto: ok }] : []),
+          ...(fallo ? [{ tono: "error" as const, texto: fallo }] : []),
+        ]}
+      />
 
       <section
         aria-label="Asignación"

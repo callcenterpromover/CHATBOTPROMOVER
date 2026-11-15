@@ -2,9 +2,10 @@ import { Insignia, Tarjeta, claseBoton, claseCampo } from "@/app/componentes";
 import { ROLES, esRol, rolesGestionables } from "@/lib/roles";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { requerirRol } from "@/lib/supabase/server";
+import { Notificaciones, type Aviso } from "@/components/Notificaciones";
 import { cambiarActivo, cambiarRol, crearUsuario } from "./actions";
 
-const MENSAJES: Record<string, { tono: "ok" | "error"; texto: string }> = {
+const MENSAJES: Record<string, Aviso> = {
   creado: { tono: "ok", texto: "Usuario creado. Entrégale su contraseña temporal por un medio seguro." },
   rol: { tono: "ok", texto: "Rol actualizado." },
   activado: { tono: "ok", texto: "Usuario activado." },
@@ -56,16 +57,7 @@ export default async function PaginaUsuarios({ searchParams }: PageProps<"/admin
         </p>
       </div>
 
-      {mensaje ? (
-        <p
-          role={mensaje.tono === "error" ? "alert" : "status"}
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            mensaje.tono === "error" ? "border-rose-200 bg-rose-50 text-rose-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"
-          }`}
-        >
-          {mensaje.texto}
-        </p>
-      ) : null}
+      <Notificaciones avisos={mensaje ? [mensaje] : []} />
       {!db ? (
         <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {MENSAJES.config.texto}

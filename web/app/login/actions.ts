@@ -30,5 +30,5 @@ export async function cerrarSesion() {
   const supabase = await crearCliente();
   await supabase.auth.signOut();
   (await cookies()).delete(COOKIE_ACTIVIDAD);
-  redirect("/login");
+  redirect("/login?salida=1");
 }

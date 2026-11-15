@@ -94,12 +94,27 @@ export default async function PaginaDashboard() {
 
   const { hoy, hace30 } = fechasDeReferencia();
 
-  const [{ data: metricas }, { data: activas }, { data: alertas }, { data: operadores }] = await Promise.all([
-    supabase.from("metricas_diarias").select("*").gte("fecha", hace30).order("fecha", { ascending: false }),
-    supabase.from("lista_espera").select("eps, asignado_a, dias_espera"),
-    supabase.from("alertas").select("codigo, solicitud_id").eq("resuelta", false),
-    supabase.from("operadores").select("user_id, nombre"),
-  ]);
+  const admin = esAdmin(operador.rol);
+  // Totales anónimos para todos; el detalle por cola (quién tiene qué) solo para administradores.
+  const [{ data: metricas }, { data: resumen }, { data: activas }, { data: alertas }, { data: operadores }] =
+    await Promise.all([
+      supabase.from("metricas_diarias").select("*").gte("fecha", hace30).order("fecha", { ascending: false }),
+      supabase.rpc("resumen_espera"),
+      admin
+        ? supabase.from("solicitudes").select("asignado_a").not("asignado_a", "is", null)
+        : Promise.resolve({ data: [] as { asignado_a: string }[] }),
+      admin
+        ? supabase.from("alertas").select("codigo").eq("resuelta", false)
+        : Promise.resolve({ data: [] as { codigo: string }[] }),
+      supabase.from("operadores").select("user_id, nombre"),
+    ]);
+  const r = (resumen ?? {}) as {
+    total?: number;
+    sin_asignar?: number;
+    mas_de_15_dias?: number;
+    por_eps?: Record<string, number>;
+    casos_con_alerta_documental?: number;
+  };
 
   const filas = (metricas ?? []) as FilaMetrica[];
   const deHoy = filas.find((f) => f.fecha === hoy);
@@ -108,15 +123,12 @@ export default async function PaginaDashboard() {
   const promedio30 = total30 ? minutos30 / total30 : null;
   const promedioHoy = deHoy?.total_gestionadas ? Number(deHoy.minutos_espera_acumulados) / deHoy.total_gestionadas : null;
 
-  const enEspera = activas ?? [];
-  const sinAsignar = enEspera.filter((s) => !s.asignado_a).length;
-  const masDe15 = enEspera.filter((s) => s.dias_espera > 15).length;
 
   const nombres = new Map((operadores ?? []).map((o) => [o.user_id as string, o.nombre as string]));
   const porOperadorHoy = deHoy?.casos_por_operador_json ?? {};
   const porOperador30 = sumarJson(filas, "casos_por_operador_json");
   const enColaPorOperador: Record<string, number> = {};
-  for (const s of enEspera) if (s.asignado_a) enColaPorOperador[s.asignado_a] = (enColaPorOperador[s.asignado_a] ?? 0) + 1;
+  for (const s of activas ?? []) enColaPorOperador[s.asignado_a] = (enColaPorOperador[s.asignado_a] ?? 0) + 1;
   const idsOperador = [...new Set([...Object.keys(porOperador30), ...Object.keys(enColaPorOperador)])];
   const rendimiento = idsOperador
     .map((id) => ({
@@ -128,7 +140,7 @@ export default async function PaginaDashboard() {
     .sort((a, b) => b.hoy - a.hoy || b.mes - a.mes);
 
   const epsActivas = (["SALUD_TOTAL", "SOS", "OTRA", "SIN_DEFINIR"] as const)
-    .map((e) => ({ etiqueta: etiqueta(EPS, e), valor: enEspera.filter((s) => s.eps === e).length }))
+    .map((e) => ({ etiqueta: etiqueta(EPS, e), valor: Number(r.por_eps?.[e] ?? 0) }))
     .filter((d) => d.valor > 0 || d.etiqueta === "Salud Total" || d.etiqueta === "SOS");
   const epsGestionadas = Object.entries(sumarJson(filas, "casos_por_eps_json"))
     .map(([e, v]) => ({ etiqueta: etiqueta(EPS, e), valor: v }))
@@ -139,17 +151,14 @@ export default async function PaginaDashboard() {
   const documentales = Object.entries(ALERTAS_DOCUMENTALES)
     .map(([codigo, texto]) => ({ etiqueta: texto, valor: conteoAlertas[codigo] ?? 0 }))
     .filter((d) => d.valor > 0);
-  // Casos (solicitudes distintas) con al menos una alerta documental abierta.
-  const totalDocumentales = new Set(
-    (alertas ?? []).filter((a) => a.codigo in ALERTAS_DOCUMENTALES).map((a) => a.solicitud_id as string),
-  ).size;
+  const totalDocumentales = Number(r.casos_con_alerta_documental ?? 0);
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
         <p className="mt-0.5 text-sm text-slate-500">
-          Indicadores de la sede Cali.{!esAdmin(operador.rol) ? " Vista de solo lectura." : ""} Históricos de los últimos
+          Indicadores de la sede Cali.{!admin ? " Vista de solo lectura." : ""} Históricos de los últimos
           30 días, sin datos de pacientes.
         </p>
       </div>
@@ -164,8 +173,8 @@ export default async function PaginaDashboard() {
         <Kpi
           icono="📋"
           titulo="Pacientes en espera activa"
-          valor={enEspera.length}
-          detalle={`${sinAsignar} sin asignar · ${masDe15} con más de 15 días`}
+          valor={Number(r.total ?? 0)}
+          detalle={`${Number(r.sin_asignar ?? 0)} sin asignar · ${Number(r.mas_de_15_dias ?? 0)} con más de 15 días`}
           href="/lista-espera?tab=bolsa"
         />
         <Kpi icono="✅" titulo="Gestionadas en la jornada" valor={deHoy?.total_gestionadas ?? 0} detalle={hoy} />
@@ -173,7 +182,7 @@ export default async function PaginaDashboard() {
           icono="🚨"
           titulo="Casos con alertas documentales"
           valor={totalDocumentales}
-          detalle={`${(alertas ?? []).length} alertas abiertas en total`}
+          detalle={admin ? `${(alertas ?? []).length} alertas abiertas en total` : "Solicitudes con al menos una"}
           href="/lista-espera?tab=bolsa&alerta=1"
         />
       </div>
@@ -191,16 +200,16 @@ export default async function PaginaDashboard() {
                       <th className="py-2 pr-4 font-medium">Operador</th>
                       <th className="py-2 pr-4 text-right font-medium">Gestionadas hoy</th>
                       <th className="py-2 pr-4 text-right font-medium">Últimos 30 días</th>
-                      <th className="py-2 text-right font-medium">En su cola ahora</th>
+                      {admin ? <th className="py-2 text-right font-medium">En su cola ahora</th> : null}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {rendimiento.map((r) => (
-                      <tr key={r.nombre}>
-                        <td className="py-2.5 pr-4 text-slate-900">{r.nombre}</td>
-                        <td className="py-2.5 pr-4 text-right tabular-nums">{r.hoy}</td>
-                        <td className="py-2.5 pr-4 text-right tabular-nums">{r.mes}</td>
-                        <td className="py-2.5 text-right tabular-nums">{r.enCola}</td>
+                    {rendimiento.map((fila) => (
+                      <tr key={fila.nombre}>
+                        <td className="py-2.5 pr-4 text-slate-900">{fila.nombre}</td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums">{fila.hoy}</td>
+                        <td className="py-2.5 pr-4 text-right tabular-nums">{fila.mes}</td>
+                        {admin ? <td className="py-2.5 text-right tabular-nums">{fila.enCola}</td> : null}
                       </tr>
                     ))}
                   </tbody>
@@ -218,9 +227,11 @@ export default async function PaginaDashboard() {
         </Tarjeta>
       </div>
 
-      <Tarjeta titulo="🚨 Alertas documentales abiertas">
-        <Barras datos={documentales} vacio="No hay alertas documentales abiertas." />
-      </Tarjeta>
+      {admin ? (
+        <Tarjeta titulo="🚨 Alertas documentales abiertas">
+          <Barras datos={documentales} vacio="No hay alertas documentales abiertas." />
+        </Tarjeta>
+      ) : null}
     </div>
   );
 }

@@ -18,13 +18,14 @@ import {
 } from "@/lib/catalogo";
 import { esAdmin } from "@/lib/roles";
 import { requerirSesion } from "@/lib/supabase/server";
+import { Notificaciones, type Aviso } from "@/components/Notificaciones";
 import { BuscadorLocal } from "../buscador-local";
 import { asignarSolicitud, devolverSolicitud, tomarSolicitud } from "./actions";
 import { ModalTomar } from "./modal-tomar";
 
 type Pestana = "mia" | "bolsa" | "otros";
 
-const AVISOS: Record<string, { tono: "ok" | "error"; texto: string }> = {
+const AVISOS: Record<string, Aviso> = {
   tomada: { tono: "error", texto: "Otra persona tomó esa solicitud antes que tú. Elige otra de la bolsa." },
   devuelta: { tono: "ok", texto: "La solicitud volvió a la bolsa general." },
   asignada: { tono: "ok", texto: "Solicitud asignada." },
@@ -113,6 +114,10 @@ export default async function PaginaListaEspera({ searchParams }: PageProps<"/li
   const cerrada = uno(sp.cerrada);
   const aviso = AVISOS[uno(sp.aviso) ?? ""];
   const volverA = `/lista-espera?tab=${pestana}`;
+  const avisos: Aviso[] = [
+    ...(cerrada ? [{ tono: "ok" as const, texto: "Solicitud cerrada. Sus datos se eliminaron y se verificó que no quedó ningún registro asociado." }] : []),
+    ...(aviso ? [aviso] : []),
+  ];
 
   const pestanas: { id: Pestana; texto: string; total: number }[] = [
     { id: "mia", texto: "Mi cola de trabajo", total: cuentas.mia },
@@ -122,21 +127,7 @@ export default async function PaginaListaEspera({ searchParams }: PageProps<"/li
 
   return (
     <div className="space-y-5">
-      {cerrada ? (
-        <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          Solicitud cerrada. Sus datos se eliminaron y se verificó que no quedó ningún registro asociado.
-        </p>
-      ) : null}
-      {aviso ? (
-        <p
-          role={aviso.tono === "error" ? "alert" : "status"}
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            aviso.tono === "error" ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"
-          }`}
-        >
-          {aviso.texto}
-        </p>
-      ) : null}
+      <Notificaciones avisos={avisos} />
 
       <div role="tablist" aria-label="Colas" className="flex flex-wrap gap-1 border-b border-slate-200">
         {pestanas.map((p) => {
