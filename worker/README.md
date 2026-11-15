@@ -11,7 +11,14 @@ Solo hace conexiones salientes (Supabase y Meta). No abre puertos.
 1. Instalar Python 3.12 y Tesseract OCR (en el equipo de la sede lo debe autorizar TI).
 2. `powershell -ExecutionPolicy Bypass -File preparar.ps1` (entorno, dependencias e idioma español).
 3. Copiar `.env.example` como `.env` y completar la clave secreta de Supabase.
-4. `powershell -ExecutionPolicy Bypass -File iniciar.ps1`
+4. Probar a mano: `powershell -ExecutionPolicy Bypass -File iniciar.ps1` (Ctrl+C para detener).
+5. Dejarlo permanente: `powershell -ExecutionPolicy Bypass -File instalar-servicio.ps1`.
+   - Como administrador crea la tarea programada «PROMOVER Worker OCR»: arranca al encender el equipo,
+     aunque nadie inicie sesión, y se reinicia sola si se detiene.
+   - Sin administrador crea un acceso directo en Inicio (arranca al iniciar sesión).
+   - Para quitarlo: `desinstalar-servicio.ps1`.
+6. Verificar en el **Dashboard** del panel: «Lector de documentos (OCR): funcionando». El worker envía
+   una señal cada minuto. El registro queda en `worker\logs\worker.log` (sin datos de pacientes).
 
 ## Probar sin WhatsApp (documentos ficticios)
 

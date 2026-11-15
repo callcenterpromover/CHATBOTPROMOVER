@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 import time
+from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -19,7 +21,7 @@ from PIL import Image
 
 from . import fuentes, ocr
 from .cola import Cola
-from .config import Config, cargar
+from .config import RAIZ, Config, cargar
 from .extraccion import Extraccion, extraer
 from .reglas import evaluar
 
@@ -121,7 +123,15 @@ def avisar_panel(trabajo_id: int, cfg: Config) -> None:
 
 def ciclo(cola: Cola, cfg: Config, una_vez: bool) -> int:
     procesados = 0
+    ultimo_latido = 0.0
     while True:
+        # Señal de vida cada minuto (se ve en el dashboard). Si falla, se reintenta en la próxima vuelta.
+        if time.monotonic() - ultimo_latido >= 60:
+            try:
+                cola.latido(procesados)
+                ultimo_latido = time.monotonic()
+            except httpx.HTTPError:
+                pass
         try:
             fuentes.purgar(cfg, conservar=set())
             trabajo = cola.reclamar()
@@ -159,13 +169,24 @@ def main() -> None:
     parser.add_argument("--una-vez", action="store_true", help="procesa lo pendiente y termina")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # Registro en pantalla y en worker/logs/worker.log (rota a 1 MB, guarda 5 archivos).
+    # Solo contiene IDs internos, códigos y tiempos: nunca datos de pacientes.
+    carpeta_logs = RAIZ / "logs"
+    carpeta_logs.mkdir(exist_ok=True)
+    archivo = RotatingFileHandler(carpeta_logs / "worker.log", maxBytes=1_000_000, backupCount=5, encoding="utf-8")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        # Sin consola (arranque automático con pythonw) solo se escribe en el archivo.
+        handlers=[archivo, logging.StreamHandler()] if sys.stderr else [archivo],
+    )
     logging.getLogger("httpx").setLevel(logging.WARNING)  # sus logs incluyen URLs con identificadores
 
     cfg = cargar()
     cola = Cola(cfg)
     fuentes.purgar(cfg)
     cola.recuperar_interrumpidos()
+    cola.latido(0, inicio=True)
     log.info("worker_iniciado fuente_local=%s", cfg.permitir_fuente_local)
     n = ciclo(cola, cfg, args.una_vez)
     log.info("worker_terminado procesados=%d", n)

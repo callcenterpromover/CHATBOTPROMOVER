@@ -30,7 +30,7 @@ const ALERTAS_DOCUMENTALES: Record<string, string> = {
 function fechasDeReferencia() {
   const ahora = new Date();
   const formato = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "America/Bogota" });
-  return { hoy: formato(ahora), hace30: formato(new Date(ahora.getTime() - 29 * 86_400_000)) };
+  return { ahora, hoy: formato(ahora), hace30: formato(new Date(ahora.getTime() - 29 * 86_400_000)) };
 }
 
 function duracion(minutos: number | null) {
@@ -92,7 +92,7 @@ export default async function PaginaDashboard() {
   const { supabase, operador } = await requerirSesion();
   if (!operador) return null;
 
-  const { hoy, hace30 } = fechasDeReferencia();
+  const { hoy, hace30, ahora } = fechasDeReferencia();
 
   const admin = esAdmin(operador.rol);
   // Totales anónimos para todos; el detalle por cola (quién tiene qué) solo para administradores.
@@ -114,7 +114,14 @@ export default async function PaginaDashboard() {
     mas_de_15_dias?: number;
     por_eps?: Record<string, number>;
     casos_con_alerta_documental?: number;
+    ocr_pendientes?: number;
+    ocr_con_error?: number;
+    worker_ultimo_latido?: string | null;
+    worker_equipo?: string | null;
   };
+  const latido = r.worker_ultimo_latido ? new Date(r.worker_ultimo_latido) : null;
+  const minutosSinSenal = latido ? (ahora.getTime() - latido.getTime()) / 60_000 : null;
+  const workerActivo = minutosSinSenal !== null && minutosSinSenal < 3;
 
   const filas = (metricas ?? []) as FilaMetrica[];
   const deHoy = filas.find((f) => f.fecha === hoy);
@@ -162,6 +169,26 @@ export default async function PaginaDashboard() {
           30 días, sin datos de pacientes.
         </p>
       </div>
+
+      <section
+        aria-label="Lector de documentos"
+        className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+          workerActivo ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"
+        }`}
+      >
+        <p>
+          <span aria-hidden="true">🖨️ </span>
+          <strong>Lector de documentos (OCR): {workerActivo ? "funcionando" : "sin señal"}</strong>
+          {latido
+            ? ` · última señal ${duracion(minutosSinSenal)} atrás${r.worker_equipo ? ` desde ${r.worker_equipo}` : ""}`
+            : " · todavía no se ha conectado nunca"}
+          {!workerActivo ? ". Los documentos quedan en cola hasta que vuelva." : ""}
+        </p>
+        <p className="tabular-nums">
+          {Number(r.ocr_pendientes ?? 0)} en cola
+          {Number(r.ocr_con_error ?? 0) > 0 ? ` · ${Number(r.ocr_con_error)} con error` : ""}
+        </p>
+      </section>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi

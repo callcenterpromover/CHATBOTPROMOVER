@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import platform
+from datetime import datetime, timezone
+
 import httpx
 
 from .config import Config
@@ -62,6 +65,22 @@ class Cola:
         r = self.http.patch(
             "/trabajos_ocr", params={"estado": "eq.EN_PROCESO"},
             json={"estado": "PENDIENTE", "error_codigo": "interrumpido"},
+        )
+        r.raise_for_status()
+
+    def latido(self, procesados: int, inicio: bool = False) -> None:
+        """Actualiza la señal de vida del worker (una sola fila, sin datos de pacientes)."""
+        fila = {
+            "id": 1,
+            "ultimo_latido": datetime.now(timezone.utc).isoformat(),
+            "equipo": platform.node()[:60],
+            "procesados_desde_inicio": procesados,
+        }
+        if inicio:
+            fila["iniciado_en"] = fila["ultimo_latido"]
+        r = self.http.post(
+            "/estado_worker", params={"on_conflict": "id"}, json=fila,
+            headers={"Prefer": "resolution=merge-duplicates"},
         )
         r.raise_for_status()
 

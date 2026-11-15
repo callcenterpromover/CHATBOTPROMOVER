@@ -45,6 +45,8 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
+      # Genera los tipos de rutas de Next (PageProps, LayoutProps); no se guardan en git.
+      - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npx eslint .
       - run: npx vitest run
