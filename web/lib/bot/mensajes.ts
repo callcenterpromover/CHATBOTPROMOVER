@@ -37,6 +37,19 @@ export const M = {
 
   servicio: "Escribe el servicio tal como aparece en la orden médica (por ejemplo: «Terapia física integral»).",
   servicioInvalido: "Escribe el nombre del servicio que aparece en la orden, en una sola línea.",
+  servicioMenu: (opciones: string[]) =>
+    "¿Qué servicio necesita el paciente según la orden? Responde con el número:\n" +
+    opciones.map((o, i) => `${i + 1}. ${o}`).join("\n"),
+  opcionEspecialistas: "Especialistas (fisiatría, ortopedia, equipo interdisciplinario, infiltraciones)",
+  especialistaMenu: (opciones: string[]) =>
+    "¿Con qué especialista es la cita? Responde con el número:\n" +
+    opciones.map((o, i) => `${i + 1}. ${o}`).join("\n") +
+    "\n0. Volver al menú anterior",
+  opcionInvalida: "Responde solo con el número de una de las opciones.",
+  menorEspecialista: (edadMinima: number) =>
+    `En PROMOVER no atendemos a menores de ${edadMinima} años con especialistas, aunque tengan OPS. ` +
+    "Por favor acude a tu EPS para que te redirijan a otra IPS donde puedan atenderte.\n" +
+    "Si necesitas otro servicio, elige una opción del menú.",
 
   edad: "¿Qué edad tiene el paciente? Escribe solo el número.",
   edadInvalida: "Escribe la edad del paciente solo con números (por ejemplo: 45).",
@@ -70,6 +83,11 @@ export const M = {
 
   preferencia:
     "¿Tienes alguna preferencia de día u horario? Es solo informativa, no es una reserva. Escribe tu preferencia o *NO*.",
+  preferenciaOpciones: (servicio: string, duracion: number, opciones: string[]) =>
+    `*${servicio}* (dura unos ${duracion} minutos) se atiende en estos horarios. ` +
+    "¿Cuál prefieres? Es solo una preferencia, no una reserva: el equipo revisará la disponibilidad y se comunicará contigo.\n" +
+    opciones.map((o, i) => `${i + 1}. ${o}`).join("\n") +
+    `\n${opciones.length + 1}. Cualquier horario`,
 
   // PRELIMINAR: el uso de estos factores como filtro requiere política aprobada (documento 07).
   factores:

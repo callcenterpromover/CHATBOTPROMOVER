@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { M } from "./mensajes";
+import type { Catalogo } from "../horarios";
+import { CATALOGO_PRUEBA } from "../horarios.prueba";
 import { ESTADO_INICIAL, procesar, type Accion, type Contexto, type Entrada, type Estado } from "./motor";
 
 const AHORA = "2026-11-15T10:00:00.000Z";
@@ -8,12 +10,15 @@ const media = (id: string): Entrada => ({ tipo: "media", mediaId: id });
 const ctx = (solicitud: Contexto["solicitud"] = null): Contexto => ({ ahora: AHORA, solicitud });
 
 /** Ejecuta una conversación completa y acumula acciones y respuestas. */
-function conversar(entradas: Entrada[], solicitud: Contexto["solicitud"] = null) {
+function conversar(entradas: Entrada[], solicitud: Contexto["solicitud"] = null, catalogo: Catalogo | null = null) {
   let estado: Estado = ESTADO_INICIAL;
   const acciones: Accion[] = [];
   const respuestas: string[] = [];
+  let sol = solicitud;
   for (const e of entradas) {
-    const r = procesar(estado, e, ctx(solicitud));
+    const r = procesar(estado, e, { ...ctx(sol), catalogo });
+    // Como en la base: lo guardado en un mensaje se ve en el siguiente.
+    sol = { ...(sol ?? {}), ...campos(r.acciones) };
     estado = r.estado;
     acciones.push(...r.acciones);
     respuestas.push(...r.respuestas);
@@ -33,8 +38,8 @@ describe("flujo completo", () => {
         texto("1000000020"),
         texto("Laura Prueba Veinte"),
         texto("1"),
-        texto("Terapia física integral"),
         texto("44"),
+        texto("Terapia física integral"),
         media("m-orden"),
         media("m-hist-1"),
         media("m-hist-2"),
@@ -43,7 +48,6 @@ describe("flujo completo", () => {
         texto("En las mañanas"),
         texto("2"),
       ],
-      { nombre: "Laura Prueba Veinte", documento: "1000000020", eps_texto: "Salud Total", servicio_texto: "Terapia física integral", edad: 44 },
     );
     expect(estado.paso).toBe("FINAL");
     expect(estado.datos.inicio).toBe(AHORA);
@@ -126,7 +130,7 @@ describe("validación de datos", () => {
     const { estado, acciones, respuestas } = conversar([
       ...hastaDocumento, texto("1000000020"), texto("Laura Prueba"), texto("3"), texto("Nueva EPS"),
     ]);
-    expect(estado.paso).toBe("SERVICIO");
+    expect(estado.paso).toBe("EDAD");
     expect(campos(acciones)).toMatchObject({ eps: "OTRA", eps_texto: "Nueva EPS" });
     expect(acciones.some((a) => a.tipo === "alerta" && a.codigo === "EPS_FUERA_DE_ALCANCE")).toBe(true);
     expect(respuestas).toContain(M.epsFueraDeAlcance);
@@ -138,7 +142,7 @@ describe("validación de datos", () => {
   });
 
   it("edad inválida se vuelve a pedir", () => {
-    const pasos = [...hastaDocumento, texto("1000000020"), texto("Laura Prueba"), texto("1"), texto("Terapia física"), texto("cuarenta")];
+    const pasos = [...hastaDocumento, texto("1000000020"), texto("Laura Prueba"), texto("1"), texto("cuarenta")];
     expect(conversar(pasos).estado.paso).toBe("EDAD");
   });
 
@@ -151,7 +155,7 @@ describe("validación de datos", () => {
 
 describe("documentos", () => {
   const hastaOrden = [
-    texto("hola"), texto("si"), texto("1000000020"), texto("Laura Prueba"), texto("1"), texto("Terapia ocupacional"), texto("8"),
+    texto("hola"), texto("si"), texto("1000000020"), texto("Laura Prueba"), texto("1"), texto("8"), texto("Terapia ocupacional"),
   ];
 
   it("LISTO sin páginas no avanza", () => {
@@ -245,5 +249,79 @@ describe("mensajes especiales", () => {
     const r = procesar({ paso: "FACTORES", datos: {} }, texto("5"), ctx());
     expect(r.estado.paso).toBe("FACTORES");
     expect(r.respuestas).toEqual([M.factoresInvalidos]);
+  });
+});
+
+describe("servicios y horarios del panel Agendas", () => {
+  const hastaEps = [texto("hola"), texto("si"), texto("1000000020"), texto("Laura Prueba")];
+  const conCatalogo = (entradas: Entrada[]) => conversar(entradas, null, CATALOGO_PRUEBA);
+
+  it("Salud Total: menú numerado, franjas del servicio y preferencia elegida", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("1")]);
+    expect(r.estado.paso).toBe("ORDEN");
+    expect(campos(r.acciones)).toMatchObject({ servicio_cita_id: 1, servicio_texto: "Valoración de fisioterapia" });
+    expect(r.respuestas.join("\n")).toContain("1. Valoración de fisioterapia\n2. Terapia física");
+    expect(r.respuestas.join("\n")).not.toContain("Especialistas");
+
+    const fin = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("1"), media("o"), media("h"), texto("listo"), texto("no")]);
+    expect(fin.estado.paso).toBe("PREFERENCIA");
+    expect(fin.respuestas.at(-1)).toContain("1. Lunes a viernes, de 7:00 a. m. a 12:00 p. m.");
+    expect(fin.respuestas.at(-1)).toContain("3. Cualquier horario");
+    const elegida = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("1"), media("o"), media("h"), texto("listo"), texto("no"), texto("2")]);
+    expect(elegida.estado.paso).toBe("FACTORES");
+    expect(campos(elegida.acciones).preferencia_horario).toBe("Lunes a viernes, de 1:15 a 4:45 p. m.");
+  });
+
+  it("opción fuera del menú se vuelve a pedir", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("99")]);
+    expect(r.estado.paso).toBe("SERVICIO");
+    expect(r.respuestas).toContain(M.opcionInvalida);
+  });
+
+  it("SOS: valoración OPS sin martes", () => {
+    const r = conCatalogo([...hastaEps, texto("2"), texto("40"), texto("1"), media("o"), media("h"), texto("listo"), texto("no")]);
+    expect(campos(r.acciones).servicio_texto).toBe("Valoración de fisioterapia (OPS de terapia física integral)");
+    expect(r.respuestas.at(-1)).not.toMatch(/martes/i);
+  });
+
+  it("SOS: especialistas en un submenú y se puede volver", () => {
+    const menu = conCatalogo([...hastaEps, texto("2"), texto("40")]);
+    const opciones = menu.respuestas.at(-1)!;
+    const n = opciones.split("\n").find((l) => l.includes("Especialistas"))!.split(".")[0];
+    const r = conCatalogo([...hastaEps, texto("2"), texto("40"), texto(n), texto("1")]);
+    expect(r.estado.paso).toBe("ORDEN");
+    expect(campos(r.acciones)).toMatchObject({ servicio_cita_id: 5, servicio_texto: "Fisiatría" });
+    const volver = conCatalogo([...hastaEps, texto("2"), texto("40"), texto(n), texto("0")]);
+    expect(volver.estado.paso).toBe("SERVICIO");
+  });
+
+  it("SOS: menor de 16 no recibe cita con especialista y se le indica ir a su EPS", () => {
+    const menu = conCatalogo([...hastaEps, texto("2"), texto("15")]);
+    const n = menu.respuestas.at(-1)!.split("\n").find((l) => l.includes("Especialistas"))!.split(".")[0];
+    const r = conCatalogo([...hastaEps, texto("2"), texto("15"), texto(n), texto("2")]);
+    expect(r.estado.paso).toBe("SERVICIO");
+    expect(r.respuestas).toContain(M.menorEspecialista(16));
+    expect(r.acciones.some((a) => a.tipo === "alerta" && a.codigo === "MENOR_EDAD_ESPECIALISTA")).toBe(true);
+    expect(campos(r.acciones).servicio_cita_id).toBeUndefined();
+  });
+
+  it("fonoaudiología: niños y adultos ven franjas distintas", () => {
+    const fono = (edad: string) =>
+      conCatalogo([...hastaEps, texto("1"), texto(edad), texto("3"), media("o"), media("h"), texto("listo"), texto("no")]).respuestas.at(-1)!;
+    expect(fono("8")).toContain("Lunes a viernes, de 7:00 a 8:30 a. m.");
+    expect(fono("30")).toContain("Lunes y miércoles, de 1:15 a 1:30 p. m.");
+    expect(fono("30")).not.toContain("7:00");
+  });
+
+  it("terapia respiratoria muestra los turnos de las 11", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("50"), texto("5"), media("o"), media("h"), texto("listo"), texto("no")]);
+    expect(campos(r.acciones).servicio_texto).toBe("Terapia respiratoria");
+    expect(r.respuestas.at(-1)).toContain("de 11:00 a 11:40 a. m.");
+  });
+
+  it("servicio sin franjas: la preferencia queda en texto libre", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("50"), texto("6"), media("o"), media("h"), texto("listo"), texto("no"), texto("los lunes")]);
+    expect(campos(r.acciones).preferencia_horario).toBe("los lunes");
+    expect(r.respuestas).toContain(M.preferencia);
   });
 });

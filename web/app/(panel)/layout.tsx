@@ -19,7 +19,12 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
     ? [
         { href: "/dashboard", texto: "Dashboard" },
         { href: "/lista-espera", texto: "Lista de espera" },
-        ...(esAdmin(operador.rol) ? [{ href: "/admin/usuarios", texto: "Usuarios" }] : []),
+        ...(esAdmin(operador.rol)
+          ? [
+              { href: "/admin/agendas", texto: "Agendas" },
+              { href: "/admin/usuarios", texto: "Usuarios" },
+            ]
+          : []),
         ...(modoSimulacion() ? [{ href: "/simulador", texto: "Simulador WhatsApp" }] : []),
       ]
     : [];

@@ -18,14 +18,15 @@ const pasos: [string, Entrada][] = [
   ["🎤 audio", { tipo: "audio" }],
   ["Carlos Prueba Setenta", t("Carlos Prueba Setenta")],
   ["2", t("2")],
-  ["Terapia ocupacional", t("Terapia ocupacional")],
   ["67", t("67")],
+  ["9 (opción inexistente)", t("9")],
+  ["4", t("4")],
   ["📎 orden_borrosa.jpg", m("orden_borrosa.jpg")],
   ["📎 historia_p1de3.png", m("historia_p1de3.png")],
   ["LISTO", t("LISTO")],
   ["sí", t("sí")],
   ["no tengo", t("no tengo")],
-  ["martes en la tarde", t("martes en la tarde")],
+  ["2", t("2")],
   ["1", t("1")],
 ];
 
@@ -42,7 +43,7 @@ const { data: conv } = await db.from("conversaciones").select("paso, solicitud_i
 console.log("paso final:", conv?.paso);
 const { data: s } = await db.from("solicitudes").select("*").eq("id", conv!.solicitud_id).single();
 console.log("solicitud:", JSON.stringify({
-  numero: s.numero, estado: s.estado, documento: s.documento, nombre: s.nombre, eps: s.eps, servicio: s.servicio_texto,
+  numero: s.numero, estado: s.estado, documento: s.documento, nombre: s.nombre, eps: s.eps, servicio: s.servicio_texto, servicio_cita_id: s.servicio_cita_id,
   edad: s.edad, terapia_previa: s.terapia_previa, plan: s.plan_estado, preferencia: s.preferencia_horario,
   factores: s.factores, consentimiento: Boolean(s.consentimiento_en), creada_antes_de_consentir: s.creada_en < s.consentimiento_en,
 }));
@@ -50,3 +51,11 @@ const { data: tr } = await db.from("trabajos_ocr").select("media_id, tipo_docume
 console.log("cola:", JSON.stringify(tr));
 const { data: msgs } = await db.from("mensajes_simulador").select("direccion, texto").eq("telefono", TEL).order("id");
 for (const x of msgs ?? []) console.log(x.direccion === "ENTRANTE" ? "\n👤" : "🤖", x.texto.replace(/\n/g, " | ").slice(0, 150));
+
+if (process.argv.includes("--limpiar")) {
+  await db.from("trabajos_ocr").delete().eq("solicitud_id", s.id);
+  await db.from("conversaciones").delete().eq("telefono", TEL);
+  await db.from("mensajes_simulador").delete().eq("telefono", TEL);
+  await db.from("solicitudes").delete().eq("id", s.id);
+  console.log("(datos de prueba borrados)");
+}

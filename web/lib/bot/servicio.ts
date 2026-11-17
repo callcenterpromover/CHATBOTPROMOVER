@@ -2,6 +2,7 @@
 // Los logs solo llevan códigos técnicos: nunca teléfonos, nombres ni texto de los mensajes.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cargarCatalogo } from "@/lib/catalogo-agendas";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { enviar } from "./canal";
 import { botActivo } from "./estado";
@@ -112,13 +113,15 @@ export async function manejarEntrada(telefono: string, entrada: Entrada, canal: 
   if (conv?.solicitud_id) {
     const { data } = await db
       .from("solicitudes")
-      .select("documento, nombre, eps_texto, servicio_texto, edad, historia_estado")
+      .select("documento, nombre, eps, eps_texto, servicio_texto, servicio_cita_id, edad, historia_estado")
       .eq("id", conv.solicitud_id)
       .maybeSingle();
     solicitud = data;
   }
 
-  const r = procesar(estado, entrada, { ahora: new Date().toISOString(), solicitud });
+  // Sin catálogo (error de lectura) el bot sigue funcionando con servicio y horario en texto libre.
+  const catalogo = await cargarCatalogo(db);
+  const r = procesar(estado, entrada, { ahora: new Date().toISOString(), solicitud, catalogo });
   const datos: Datos = { ...r.estado.datos, canal };
 
   const solicitudId = await aplicar(db, r.acciones, conv?.solicitud_id ?? null, telefono, datos);

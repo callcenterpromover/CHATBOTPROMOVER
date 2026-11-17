@@ -5,6 +5,7 @@
 // Reglas que no se rompen: una pregunta a la vez, nunca confirmar citas, no inventar datos y no
 // recibir documentos antes de la autorización.
 
+import { franjasPara, opcionesPaciente, serviciosPara, type Catalogo, type ServicioCita } from "../horarios";
 import { M } from "./mensajes";
 
 export type Canal = "whatsapp" | "simulador";
@@ -26,6 +27,7 @@ export type Paso =
   | "EPS"
   | "EPS_OTRA"
   | "SERVICIO"
+  | "ESPECIALISTA"
   | "EDAD"
   | "ORDEN"
   | "HISTORIA"
@@ -40,7 +42,11 @@ export type Datos = {
   canal?: Canal;
   documentoPorConfirmar?: string;
   paginas?: number;
+  opciones?: number[]; // IDs de servicio del último menú mostrado (0 = "Especialistas")
+  franjas?: string[]; // franjas ofrecidas en la pregunta de preferencia
 };
+
+const OPCION_ESPECIALISTAS = 0;
 
 export type Estado = { paso: Paso; datos: Datos };
 
@@ -50,6 +56,7 @@ export type CamposSolicitud = {
   eps?: "SALUD_TOTAL" | "SOS" | "OTRA";
   eps_texto?: string;
   servicio_texto?: string;
+  servicio_cita_id?: number;
   edad?: number;
   terapia_previa?: "SI" | "NO" | "NO_SABE";
   plan_estado?: "REQUERIDO_PENDIENTE";
@@ -68,13 +75,16 @@ export type Accion =
 export type SolicitudContexto = {
   documento?: string | null;
   nombre?: string | null;
+  eps?: string | null;
   eps_texto?: string | null;
   servicio_texto?: string | null;
+  servicio_cita_id?: number | null;
   edad?: number | null;
   historia_estado?: string | null;
 } | null;
 
-export type Contexto = { ahora: string; solicitud: SolicitudContexto };
+/** `catalogo` viene del panel Agendas; sin él (o sin servicios) el bot pide servicio y horario en texto libre. */
+export type Contexto = { ahora: string; solicitud: SolicitudContexto; catalogo?: Catalogo | null };
 
 export type Resultado = { estado: Estado; respuestas: string[]; acciones: Accion[] };
 
@@ -116,6 +126,7 @@ function pregunta(paso: Paso, datos: Datos): string {
     case "EPS_OTRA":
       return M.epsOtraPregunta;
     case "SERVICIO":
+    case "ESPECIALISTA":
       return M.servicio;
     case "EDAD":
       return M.edad;
@@ -136,7 +147,13 @@ function pregunta(paso: Paso, datos: Datos): string {
   }
 }
 
-const PASOS_SIN_DOCUMENTOS: Paso[] = ["DOCUMENTO", "CONFIRMAR_DOCUMENTO", "NOMBRE", "EPS", "EPS_OTRA", "SERVICIO", "EDAD"];
+const PASOS_SIN_DOCUMENTOS: Paso[] = ["DOCUMENTO", "CONFIRMAR_DOCUMENTO", "NOMBRE", "EPS", "EPS_OTRA", "EDAD", "SERVICIO", "ESPECIALISTA"];
+
+/** Número de opción escrito por el paciente ("2", "2.", "opción 2"), o null. */
+function numeroOpcion(t: string): number | null {
+  const m = /^(?:opcion |la )?(\d{1,2})$/.exec(t.trim());
+  return m ? Number(m[1]) : null;
+}
 
 function resumen(s: SolicitudContexto, datos: Datos): string {
   const lineas = [
@@ -158,11 +175,70 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
   let paso = estado.paso;
   let datos: Datos = { ...estado.datos };
   const hayConsentimiento = !["INICIO", "CONSENTIMIENTO"].includes(paso);
+  // Vista de la solicitud con los cambios de este mismo mensaje (la base aún no los tiene).
+  const sol: NonNullable<SolicitudContexto> = { ...(ctx.solicitud ?? {}) };
+  const act = (campos: CamposSolicitud) => {
+    acciones.push({ tipo: "actualizar", campos });
+    Object.assign(sol, campos);
+  };
+  const catalogo = ctx.catalogo ?? null;
+  const menuServicios = () => (catalogo ? serviciosPara(catalogo, sol.eps) : { principales: [], especialistas: [] });
+  const servicioElegido = (): ServicioCita | null =>
+    catalogo?.servicios.find((s) => s.id === sol.servicio_cita_id) ?? null;
+
+  // Pregunta del paso. Las de menú guardan en `datos` qué opciones se mostraron.
+  const preguntar = (p: Paso): string => {
+    if (p === "SERVICIO") {
+      const { principales, especialistas } = menuServicios();
+      if (!principales.length && !especialistas.length) {
+        delete datos.opciones;
+        return M.servicio;
+      }
+      datos.opciones = [...principales.map((s) => s.id), ...(especialistas.length ? [OPCION_ESPECIALISTAS] : [])];
+      return M.servicioMenu([...principales.map((s) => s.nombre), ...(especialistas.length ? [M.opcionEspecialistas] : [])]);
+    }
+    if (p === "ESPECIALISTA") {
+      const { especialistas } = menuServicios();
+      datos.opciones = especialistas.map((s) => s.id);
+      return M.especialistaMenu(especialistas.map((s) => s.nombre));
+    }
+    if (p === "PREFERENCIA") {
+      const s = servicioElegido();
+      const opciones = s && catalogo ? opcionesPaciente(franjasPara(catalogo, s, sol.edad), s.duracion_min) : [];
+      if (!s || !opciones.length) {
+        delete datos.franjas;
+        return M.preferencia;
+      }
+      datos.franjas = opciones;
+      return M.preferenciaOpciones(s.nombre, s.duracion_min, opciones);
+    }
+    return pregunta(p, datos);
+  };
+
+  // Paso siguiente según lo que falte (conversaciones iniciadas con el orden anterior incluidas).
+  const despuesDeEdad = (): Paso => (sol.servicio_texto ? "ORDEN" : "SERVICIO");
+  const despuesDeServicio = (): Paso => (sol.edad == null ? "EDAD" : "ORDEN");
+
+  const elegirServicio = (s: ServicioCita): Resultado => {
+    if (s.edad_minima != null && sol.edad != null && sol.edad < s.edad_minima) {
+      acciones.push({
+        tipo: "alerta",
+        codigo: "MENOR_EDAD_ESPECIALISTA",
+        detalle: `El paciente tiene ${sol.edad} años y pidió ${s.nombre}, que no atiende a menores de ${s.edad_minima} años. El bot le indicó acudir a su EPS para que lo redirijan.`,
+      });
+      ir("SERVICIO", M.menorEspecialista(s.edad_minima));
+      return fin();
+    }
+    act({ servicio_cita_id: s.id, servicio_texto: s.nombre });
+    delete datos.opciones;
+    ir(despuesDeServicio());
+    return fin();
+  };
 
   const ir = (nuevo: Paso, extra?: string) => {
     paso = nuevo;
     if (extra) respuestas.push(extra);
-    respuestas.push(pregunta(nuevo, datos));
+    respuestas.push(preguntar(nuevo));
   };
   const fin = (): Resultado => ({ estado: { paso, datos }, respuestas, acciones });
 
@@ -177,11 +253,11 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
 
   // --- Mensajes que valen en cualquier paso ----------------------------------------------
   if (entrada.tipo === "audio") {
-    respuestas.push(M.audio, pregunta(paso, datos));
+    respuestas.push(M.audio, preguntar(paso));
     return fin();
   }
   if (entrada.tipo === "otro") {
-    respuestas.push(M.noSoportado, pregunta(paso, datos));
+    respuestas.push(M.noSoportado, preguntar(paso));
     return fin();
   }
   if (entrada.tipo === "texto") {
@@ -193,7 +269,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
           codigo: "POSIBLE_URGENCIA",
           detalle: "El paciente mencionó una urgencia o emergencia. El bot le indicó acudir a urgencias o llamar al 123. Contactarlo según el protocolo institucional.",
         });
-      respuestas.push(M.urgencia, pregunta(paso, datos));
+      respuestas.push(M.urgencia, preguntar(paso));
       return fin();
     }
     if (/\b(asesor|asesora|persona|humano|agente|hablar con alguien|operador)\b/.test(t)) {
@@ -203,7 +279,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
           codigo: "SOLICITA_PERSONA",
           detalle: "El paciente pidió hablar con una persona. Contactarlo por WhatsApp.",
         });
-      respuestas.push(M.persona, pregunta(paso, datos));
+      respuestas.push(M.persona, preguntar(paso));
       return fin();
     }
     if (hayConsentimiento && paso !== "FINAL" && /^(cancelar|ya no|no quiero continuar|desisto)$/.test(t)) {
@@ -239,13 +315,13 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
         return fin();
       default:
         if (PASOS_SIN_DOCUMENTOS.includes(paso)) {
-          respuestas.push(M.documentosDespues, pregunta(paso, datos));
+          respuestas.push(M.documentosDespues, preguntar(paso));
           return fin();
         }
         // Después de la historia: se agrega a la solicitud; el worker identifica el tipo.
         acciones.push({ tipo: "encolar", mediaId: entrada.mediaId, tipoDocumento: "DESCONOCIDO" });
         respuestas.push(M.documentoAgregado);
-        if (paso !== "FINAL") respuestas.push(pregunta(paso, datos));
+        if (paso !== "FINAL") respuestas.push(preguntar(paso));
         return fin();
     }
   }
@@ -280,21 +356,21 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
         ir("CONFIRMAR_DOCUMENTO");
         return fin();
       }
-      acciones.push({ tipo: "actualizar", campos: { documento: limpio } });
+      act({ documento: limpio });
       ir("NOMBRE");
       return fin();
     }
 
     case "CONFIRMAR_DOCUMENTO":
       if (esSi(texto) && datos.documentoPorConfirmar) {
-        acciones.push({ tipo: "actualizar", campos: { documento: datos.documentoPorConfirmar } });
+        act({ documento: datos.documentoPorConfirmar });
         delete datos.documentoPorConfirmar;
         ir("NOMBRE");
       } else if (esNo(texto)) {
         delete datos.documentoPorConfirmar;
         ir("DOCUMENTO");
       } else {
-        respuestas.push(pregunta(paso, datos));
+        respuestas.push(preguntar(paso));
       }
       return fin();
 
@@ -305,18 +381,18 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
         respuestas.push(M.nombreInvalido);
         return fin();
       }
-      acciones.push({ tipo: "actualizar", campos: { nombre } });
+      act({ nombre });
       ir("EPS");
       return fin();
     }
 
     case "EPS":
       if (t === "1" || /salud ?total/.test(t)) {
-        acciones.push({ tipo: "actualizar", campos: { eps: "SALUD_TOTAL", eps_texto: t === "1" ? "Salud Total" : texto } });
-        ir("SERVICIO");
+        act({ eps: "SALUD_TOTAL", eps_texto: t === "1" ? "Salud Total" : texto });
+        ir("EDAD");
       } else if (t === "2" || /\bs ?o ?s\b|occidental/.test(t)) {
-        acciones.push({ tipo: "actualizar", campos: { eps: "SOS", eps_texto: t === "2" ? "SOS" : texto } });
-        ir("SERVICIO");
+        act({ eps: "SOS", eps_texto: t === "2" ? "SOS" : texto });
+        ir("EDAD");
       } else if (t === "3" || t === "otra") {
         ir("EPS_OTRA");
       } else if (/^[\p{L} .&-]{3,60}$/u.test(texto)) {
@@ -333,14 +409,45 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
       }
       return epsOtra(texto);
 
-    case "SERVICIO":
+    case "SERVICIO": {
+      if (datos.opciones?.length) {
+        const n = numeroOpcion(t);
+        const id = n != null && n >= 1 ? datos.opciones[n - 1] : undefined;
+        if (id === OPCION_ESPECIALISTAS) {
+          ir("ESPECIALISTA");
+          return fin();
+        }
+        const s = id != null ? catalogo?.servicios.find((x) => x.id === id) : undefined;
+        if (!s) {
+          respuestas.push(M.opcionInvalida, preguntar("SERVICIO"));
+          return fin();
+        }
+        return elegirServicio(s);
+      }
+      // Sin catálogo configurado: texto libre, como antes.
       if (texto.length < 3 || texto.length > 120 || texto.includes("\n")) {
         respuestas.push(M.servicioInvalido);
         return fin();
       }
-      acciones.push({ tipo: "actualizar", campos: { servicio_texto: texto } });
-      ir("EDAD");
+      act({ servicio_texto: texto });
+      ir(despuesDeServicio());
       return fin();
+    }
+
+    case "ESPECIALISTA": {
+      const n = numeroOpcion(t);
+      if (n === 0 || /^(volver|atras|regresar)$/.test(t)) {
+        ir("SERVICIO");
+        return fin();
+      }
+      const id = n != null && n >= 1 ? datos.opciones?.[n - 1] : undefined;
+      const s = id != null ? catalogo?.servicios.find((x) => x.id === id) : undefined;
+      if (!s) {
+        respuestas.push(M.opcionInvalida, preguntar("ESPECIALISTA"));
+        return fin();
+      }
+      return elegirServicio(s);
+    }
 
     case "EDAD": {
       const m = t.match(/^(\d{1,3})( anos?)?$/);
@@ -349,8 +456,8 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
         respuestas.push(M.edadInvalida);
         return fin();
       }
-      acciones.push({ tipo: "actualizar", campos: { edad } });
-      ir("ORDEN");
+      act({ edad });
+      ir(despuesDeEdad());
       return fin();
     }
 
@@ -365,7 +472,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
           respuestas.push(M.historiaSinPaginas);
           return fin();
         }
-        if (ctx.solicitud?.historia_estado === "POSIBLEMENTE_INCOMPLETA") respuestas.push(M.historiaIncompleta);
+        if (sol.historia_estado === "POSIBLEMENTE_INCOMPLETA") respuestas.push(M.historiaIncompleta);
         ir("TERAPIA_PREVIA");
       } else if (/no (la )?tengo/.test(t)) {
         ir("TERAPIA_PREVIA", M.faltaHistoria);
@@ -381,12 +488,9 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
         return fin();
       }
       // RB-017 / RB-018: continuidad de Terapia ocupacional o Fonoaudiología exige el plan.
-      const servicio = normalizar(ctx.solicitud?.servicio_texto ?? "");
+      const servicio = normalizar(sol.servicio_texto ?? "");
       const requierePlan = valor === "SI" && /ocupacional|fonoaudiolog|lenguaje|maxilofacial/.test(servicio);
-      acciones.push({
-        tipo: "actualizar",
-        campos: requierePlan ? { terapia_previa: valor, plan_estado: "REQUERIDO_PENDIENTE" } : { terapia_previa: valor },
-      });
+      act(requierePlan ? { terapia_previa: valor, plan_estado: "REQUERIDO_PENDIENTE" } : { terapia_previa: valor });
       if (requierePlan) ir("PLAN");
       else ir("PREFERENCIA", valor === "NO" ? M.terapiaNoIniciada : undefined);
       return fin();
@@ -398,8 +502,20 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
       return fin();
 
     case "PREFERENCIA":
+      if (datos.franjas?.length) {
+        const n = numeroOpcion(t);
+        const cualquiera = n === datos.franjas.length + 1 || /^(cualquiera|cualquier horario|indiferente|no|ninguna)$/.test(t);
+        if (!cualquiera && !(n != null && n >= 1 && n <= datos.franjas.length)) {
+          respuestas.push(M.opcionInvalida, preguntar("PREFERENCIA"));
+          return fin();
+        }
+        if (!cualquiera) act({ preferencia_horario: datos.franjas[n! - 1] });
+        delete datos.franjas;
+        ir("FACTORES");
+        return fin();
+      }
       if (!esNo(texto) && !/^(ninguna|no tengo|cualquiera|indiferente)$/.test(t)) {
-        acciones.push({ tipo: "actualizar", campos: { preferencia_horario: texto.slice(0, 120) } });
+        act({ preferencia_horario: texto.slice(0, 120) });
       }
       ir("FACTORES");
       return fin();
@@ -416,10 +532,10 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
         for (const n of new Set(numeros)) factores.push(mapa[n]);
       }
       // Adulto mayor se deriva de la edad declarada (60 años o más, Ley 1251 de 2008).
-      if ((ctx.solicitud?.edad ?? 0) >= 60) factores.push("ADULTO_MAYOR");
-      if (factores.length) acciones.push({ tipo: "actualizar", campos: { factores, factores_origen: "DECLARADO" } });
+      if ((sol.edad ?? 0) >= 60) factores.push("ADULTO_MAYOR");
+      if (factores.length) act({ factores, factores_origen: "DECLARADO" });
       paso = "FINAL";
-      respuestas.push(resumen(ctx.solicitud, datos), M.recibida);
+      respuestas.push(resumen(sol, datos), M.recibida);
       return fin();
     }
 
@@ -437,13 +553,13 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
   return fin();
 
   function epsOtra(nombreEps: string): Resultado {
-    acciones.push({ tipo: "actualizar", campos: { eps: "OTRA", eps_texto: nombreEps } });
+    act({ eps: "OTRA", eps_texto: nombreEps });
     acciones.push({
       tipo: "alerta",
       codigo: "EPS_FUERA_DE_ALCANCE",
       detalle: `El paciente declaró la EPS «${nombreEps}», distinta de Salud Total y SOS. No se aplicaron reglas automáticas; decidir manualmente cómo continuar.`,
     });
-    ir("SERVICIO", M.epsFueraDeAlcance);
+    ir("EDAD", M.epsFueraDeAlcance);
     return fin();
   }
 }

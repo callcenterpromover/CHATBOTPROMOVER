@@ -22,6 +22,8 @@ import {
   tonoEstadoDocumental,
   type FilaLista,
 } from "@/lib/catalogo";
+import type { ServicioCita } from "@/lib/horarios";
+import { verificaciones, type IpsSos, type Lineamiento } from "@/lib/lineamientos";
 import { esAdmin } from "@/lib/roles";
 import { Notificaciones } from "@/components/Notificaciones";
 import { requerirSesion } from "@/lib/supabase/server";
@@ -103,9 +105,23 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
   if (!s) notFound();
   // Solo se edita lo que está asignado a uno (o siendo administrador). La base lo exige también (RLS).
   const puedeEditar = admin || s.asignado_a === user.id;
-  const { data: operadores } = admin
-    ? await supabase.from("operadores").select("user_id, nombre").eq("activo", true).order("nombre")
-    : { data: [] as { user_id: string; nombre: string }[] };
+  const [{ data: operadores }, { data: agenda }, { data: ips }, { data: lineamientos }] = await Promise.all([
+    admin
+      ? supabase.from("operadores").select("user_id, nombre").eq("activo", true).order("nombre")
+      : Promise.resolve({ data: [] as { user_id: string; nombre: string }[] }),
+    supabase.from("solicitudes").select("servicio_cita:servicios_cita(*)").eq("id", id).maybeSingle(),
+    supabase.from("ips_sos").select("*"),
+    supabase.from("lineamientos_generales").select("*"),
+  ]);
+  const servicioCita = (agenda?.servicio_cita ?? null) as unknown as ServicioCita | null;
+  const aVerificar = verificaciones({
+    servicio: servicioCita,
+    eps: s.eps,
+    edad: s.edad,
+    autorizacionEstado: s.autorizacion_estado,
+    lineamientos: (lineamientos ?? []) as Lineamiento[],
+    ips: (ips ?? []) as IpsSos[],
+  });
 
   const ok = typeof sp.ok === "string" ? MENSAJES_OK[sp.ok] : sp.aviso === "asignada" ? "Solicitud asignada." : undefined;
   const fallo = typeof sp.error === "string" ? MENSAJES_ERROR[sp.error] : sp.aviso === "error" ? MENSAJES_ERROR.cola : undefined;
@@ -237,6 +253,28 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
             )}
           </Tarjeta>
 
+          {aVerificar.length ? (
+            <Tarjeta titulo="A verificar al agendar">
+              <ul className="space-y-2.5">
+                {aVerificar.map((v, i) => (
+                  <li key={i} className="flex gap-2.5 text-sm">
+                    <span
+                      aria-hidden="true"
+                      className={`mt-1.5 size-2 shrink-0 rounded-full ${
+                        v.nivel === "alerta" ? "bg-rose-500" : v.nivel === "aviso" ? "bg-amber-500" : "bg-sky-500"
+                      }`}
+                    />
+                    <span>
+                      <span className="font-medium text-slate-900">{v.titulo}.</span>{" "}
+                      <span className="text-slate-600">{v.texto}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-xs text-slate-500">Se configura en Agendas → Reglas y lineamientos.</p>
+            </Tarjeta>
+          ) : null}
+
           <Tarjeta titulo="Datos de la solicitud">
             <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
               <Dato nombre="Documento">
@@ -250,7 +288,12 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
                 {etiqueta(EPS, s.eps)}
                 {s.eps_texto ? <span className="text-slate-500"> · escribió “{s.eps_texto}”</span> : null}
               </Dato>
-              <Dato nombre="Servicio (texto de la orden)">{s.servicio_texto ?? "—"}</Dato>
+              <Dato nombre="Servicio solicitado">
+                {s.servicio_texto ?? "—"}
+                {servicioCita?.nombre_visoft ? (
+                  <span className="block text-xs text-slate-500">Visoft: {servicioCita.nombre_visoft}</span>
+                ) : null}
+              </Dato>
               <Dato nombre="Especialidad probable">
                 {etiqueta(CATEGORIAS, s.categoria_probable)}
                 {s.clasificacion_confianza ? (
