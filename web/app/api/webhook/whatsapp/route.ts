@@ -3,6 +3,7 @@
 // si el procesamiento falla se responde 500 para que Kapso reintente (hasta 2 veces).
 
 import { NextResponse, type NextRequest } from "next/server";
+import { botActivo } from "@/lib/bot/estado";
 import { extraerMensajesKapso, firmaKapsoValida } from "@/lib/bot/kapso";
 import { manejarEntrada } from "@/lib/bot/servicio";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
@@ -33,6 +34,8 @@ export async function POST(request: NextRequest) {
   }
 
   const db = crearClienteAdmin();
+  // Bot pausado por un super_admin: se confirma la entrega (sin reintentos) y no se responde ni se guarda nada.
+  if (!(await botActivo(db))) return NextResponse.json({ ok: true, pausado: true });
   for (const m of extraerMensajesKapso(json, process.env.KAPSO_PHONE_NUMBER_ID)) {
     // Kapso reintenta: cada mensaje se procesa una sola vez.
     const clave = `kapso:${m.id}`;

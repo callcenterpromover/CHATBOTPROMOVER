@@ -5,10 +5,15 @@ import { CargaAlEnviar } from "@/components/PantallaCarga";
 import { modoSimulacion } from "@/lib/bot/canal";
 import { ROLES, esAdmin, inicioPorRol } from "@/lib/roles";
 import { requerirSesion } from "@/lib/supabase/server";
+import { InterruptorBot } from "./interruptor-bot";
 import { Navegacion } from "./navegacion";
 
 export default async function LayoutPanel({ children }: LayoutProps<"/">) {
-  const { operador } = await requerirSesion();
+  const { supabase, operador } = await requerirSesion();
+  const superAdmin = operador?.rol === "super_admin";
+  const { data: bot } = superAdmin
+    ? await supabase.from("configuracion_bot").select("activo").eq("id", 1).maybeSingle()
+    : { data: null };
 
   const enlaces = operador
     ? [
@@ -31,6 +36,7 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
             <Navegacion enlaces={enlaces} />
           </div>
           <div className="flex items-center gap-3">
+            {superAdmin ? <InterruptorBot activoInicial={bot?.activo === true} /> : null}
             {operador ? (
               <span className="hidden text-right text-sm leading-tight text-slate-600 sm:block">
                 {operador.nombre}

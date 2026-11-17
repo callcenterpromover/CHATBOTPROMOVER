@@ -2,6 +2,7 @@
 // configurar META_VERIFY_TOKEN, META_APP_SECRET, META_PHONE_NUMBER_ID y META_WHATSAPP_TOKEN.
 
 import { NextResponse, type NextRequest } from "next/server";
+import { botActivo } from "@/lib/bot/estado";
 import { manejarEntrada } from "@/lib/bot/servicio";
 import { extraerMensajes, firmaValida } from "@/lib/bot/whatsapp";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
@@ -38,6 +39,8 @@ export async function POST(request: NextRequest) {
   }
 
   const db = crearClienteAdmin();
+  // Bot pausado por un super_admin: se confirma la entrega (sin reintentos) y no se responde ni se guarda nada.
+  if (!(await botActivo(db))) return NextResponse.json({ ok: true, pausado: true });
   for (const m of extraerMensajes(json, process.env.META_PHONE_NUMBER_ID)) {
     // Meta reintenta: cada mensaje se procesa una sola vez.
     const { data: nuevo } = await db

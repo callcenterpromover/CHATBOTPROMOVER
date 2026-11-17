@@ -4,6 +4,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { enviar } from "./canal";
+import { botActivo } from "./estado";
 import { M } from "./mensajes";
 import { ESTADO_INICIAL, procesar, type Accion, type Canal, type Datos, type Entrada, type Estado, type Paso } from "./motor";
 
@@ -173,7 +174,9 @@ export async function avisarDocumentoProcesado(trabajoId: number) {
     if (s?.historia_estado === "POSIBLEMENTE_INCOMPLETA") texto = M.historiaIncompleta;
   }
   if (!texto) return "sin_aviso";
+  const canal = conv.datos?.canal ?? "whatsapp";
+  if (canal !== "simulador" && !(await botActivo(db))) return "bot_pausado";
 
-  await enviar(db, conv.datos?.canal ?? "whatsapp", conv.telefono, [texto]);
+  await enviar(db, canal, conv.telefono, [texto]);
   return "avisado";
 }
