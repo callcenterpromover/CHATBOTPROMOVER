@@ -26,9 +26,23 @@ begin
   end;
   reset role;
 
-  -- 3) cierre real; se revierte al final
+  -- 2b) autenticado sin permiso tampoco puede borrar directo por la API
+  set local role authenticated;
+  begin
+    delete from public.solicitudes where documento = '1000000007';
+    v_noop_rpc := v_noop_rpc || ' delete_directo=PERMITIDO (MAL)';
+  exception when insufficient_privilege then v_noop_rpc := v_noop_rpc || ' delete_directo=denegado';
+  end;
+  reset role;
+
+  -- 3) cierre real por un administrador; se revierte al final
+  insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000c1', 'admin-cierre@prueba.test');
+  insert into public.operadores (user_id, nombre, rol) values ('00000000-0000-0000-0000-0000000000c1', 'Admin cierre', 'administrador');
+  perform set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000c1","role":"authenticated"}', true);
   select id into v_id from public.solicitudes where documento = '1000000007' and categoria_probable = 'FISIATRIA';
+  set local role authenticated;
   v_res := public.cerrar_solicitud(v_id, 'GESTIONADA');
+  reset role;
   select count(*) into v_sol from public.solicitudes;
   select count(*) into v_al from public.alertas where solicitud_id = v_id;
   select count(*) into v_ce from public.campos_extraidos where solicitud_id = v_id;

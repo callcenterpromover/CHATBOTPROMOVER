@@ -4,6 +4,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { botActivo } from "@/lib/bot/estado";
+import { claveLimite, dentroDelLimite } from "@/lib/limites";
 import { extraerMensajesKapso, firmaKapsoValida } from "@/lib/bot/kapso";
 import { manejarEntrada } from "@/lib/bot/servicio";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
@@ -44,6 +45,8 @@ export async function POST(request: NextRequest) {
       .upsert({ id: clave }, { onConflict: "id", ignoreDuplicates: true })
       .select("id");
     if (!nuevo?.length) continue;
+    // Inundación desde un mismo número: más de 30 mensajes en 5 minutos se ignoran.
+    if (!(await dentroDelLimite(claveLimite("wa", m.telefono), 30, 300))) continue;
 
     try {
       await manejarEntrada(m.telefono, m.entrada, "whatsapp");

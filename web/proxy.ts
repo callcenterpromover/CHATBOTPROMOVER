@@ -4,8 +4,41 @@ import { COOKIE_ACTIVIDAD, opcionesActividad, opcionesSeguras, sesionInactiva } 
 
 // Refresca la sesión, cierra las sesiones inactivas y hace una comprobación rápida.
 // La autorización real se verifica en cada página/acción (requerirSesion) y en la base (RLS).
+const DESARROLLO = process.env.NODE_ENV !== "production";
+
+/**
+ * CSP con nonce por petición: solo se ejecutan los scripts que Next.js marca con el nonce, así una
+ * inyección de HTML no puede correr código. Los estilos en línea se permiten (sin riesgo de ejecución).
+ */
+function politicaContenido(nonce: string): string {
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DESARROLLO ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    `connect-src 'self'${DESARROLLO ? " ws://localhost:* http://localhost:*" : ""}`,
+    "frame-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "object-src 'none'",
+    ...(DESARROLLO ? [] : ["upgrade-insecure-requests"]),
+  ].join("; ");
+}
+
 export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const csp = politicaContenido(nonce);
+  // Next.js lee el nonce de la cabecera CSP de la petición y lo aplica a sus scripts.
+  request.headers.set("x-nonce", nonce);
+  request.headers.set("Content-Security-Policy", csp);
+  const siguiente = () => {
+    const r = NextResponse.next({ request: { headers: request.headers } });
+    r.headers.set("Content-Security-Policy", csp);
+    return r;
+  };
+  let response = siguiente();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,7 +50,7 @@ export async function proxy(request: NextRequest) {
         },
         setAll(lista) {
           lista.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
+          response = siguiente();
           lista.forEach(({ name, value, options }) => response.cookies.set(name, value, opcionesSeguras(options)));
         },
       },

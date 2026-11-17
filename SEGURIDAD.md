@@ -19,19 +19,23 @@ controles vigentes, lo que falta antes de usar datos reales y qué hacer ante un
 **Acceso**
 - Panel con usuario y contraseña (Supabase Auth). Solo ven datos los usuarios de la tabla `operadores`
   (RLS en todas las tablas). El rol anónimo no tiene ningún permiso.
-- El operador solo puede modificar las columnas que edita en el panel (permisos por columna).
+- El operador solo puede modificar las columnas que edita en el panel (permisos por columna); no puede
+  cambiar asignaciones, roles ni datos del sistema. Cerrar una solicitud solo es posible con
+  `cerrar_solicitud` (verifica permiso y audita); el borrado directo por la API está revocado.
+- Máximo 5 intentos de inicio de sesión por cuenta y 20 por IP cada 15 minutos (límite en la base,
+  con claves resumidas por HMAC: no se guarda la IP ni el correo).
 - La sesión se cierra sola tras 30 minutos sin actividad. Las cookies de sesión son `httpOnly`.
 - El simulador solo existe con `MODO_SIMULACION=1` y solo acepta números ficticios (`5730000000xx`).
 
 **Claves**
-- La clave secreta de Supabase, el token de Meta y `WORKER_SECRET` solo viven en variables de servidor
+- La clave secreta de Supabase, el token de Meta, la clave de Kapso y `WORKER_SECRET` solo viven en variables de servidor
   (Vercel) y en `worker/.env` del equipo de la sede. Nunca con prefijo `NEXT_PUBLIC_` ni en git.
 - La revisión automática de GitHub busca secretos en todo el historial en cada push.
 
 **Bot y webhook**
 - El webhook verifica la firma HMAC de Meta, rechaza cuerpos de más de 512 KB y no procesa dos veces
   el mismo mensaje. El endpoint del worker exige `WORKER_SECRET` (comparación en tiempo constante).
-- Máximo 30 documentos por solicitud. No se reciben documentos antes de la autorización del paciente.
+- Más de 30 mensajes de un mismo número en 5 minutos se ignoran. Máximo 30 documentos por solicitud. No se reciben documentos antes de la autorización del paciente.
 
 **Worker**
 - Solo conexiones salientes; no abre puertos.
@@ -40,8 +44,9 @@ controles vigentes, lo que falta antes de usar datos reales y qué hacer ante un
   y tiempo máximo de Tesseract.
 
 **Navegador**
-- Política de contenido (CSP) que impide cargar scripts externos o enviar datos a otros dominios,
-  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, sin indexación.
+- CSP con nonce por petición (solo corren los scripts propios marcados por Next.js; no se pueden
+  cargar scripts externos ni enviar datos a otros dominios), HSTS de 2 años, `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Cross-Origin-Opener-Policy: same-origin`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, sin indexación.
 - La búsqueda por nombre o documento se hace en el navegador: no viaja en la URL ni queda en registros.
 
 **Registros (logs)**
@@ -73,6 +78,9 @@ controles vigentes, lo que falta antes de usar datos reales y qué hacer ante un
 
 ## Comprobaciones
 
+Última auditoría completa: [docs/auditoria-seguridad-2026-11-17.md](docs/auditoria-seguridad-2026-11-17.md).
+
 - `supabase/tests/auditoria_permisos.sql`: lista permisos, políticas y funciones expuestas (solo lectura).
-- `supabase/tests/permisos_y_cierre.sql`: verifica RLS y el borrado al cerrar (no deja cambios).
+- `supabase/tests/permisos_y_cierre.sql`: verifica RLS, el bloqueo del borrado directo y el cierre (no deja cambios).
+- `supabase/tests/roles_y_colas.sql` y `supabase/tests/agendas.sql`: colas por rol y permisos de Agendas.
 - `npm --prefix web test` y `python -m pytest` en `worker/` (incluye `tests/test_seguridad.py`).

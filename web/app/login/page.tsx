@@ -11,7 +11,11 @@ export default async function PaginaLogin({ searchParams }: PageProps<"/login">)
       <Notificaciones
         avisos={[
           ...(expirada ? [{ tono: "info" as const, texto: "La sesión se cerró por inactividad. Ingresa de nuevo." }] : []),
-          ...(error ? [{ tono: "error" as const, texto: "Correo o contraseña incorrectos." }] : []),
+          ...(error === "bloqueado"
+            ? [{ tono: "error" as const, texto: "Demasiados intentos. Espera 15 minutos antes de volver a intentar." }]
+            : error
+              ? [{ tono: "error" as const, texto: "Correo o contraseña incorrectos." }]
+              : []),
           ...(salida ? [{ tono: "ok" as const, texto: "Cerraste sesión correctamente." }] : []),
         ]}
       />
