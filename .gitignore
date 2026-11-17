@@ -27,3 +27,6 @@ __pycache__/
 
 # Grafo de graphify (local, se regenera)
 graphify-out/
+
+# Calibracion del OCR: imagenes reales de pacientes. NUNCA subir.
+calibracion/
