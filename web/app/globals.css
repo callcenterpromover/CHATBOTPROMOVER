@@ -8,6 +8,20 @@
 body {
   background: #f8fafc;
   color: #0f172a;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Superficies del navegador con la paleta del panel. */
+::selection {
+  background: rgb(13 148 136 / 0.2);
+}
+:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+input,
+textarea {
+  caret-color: #0f766e;
 }
 
 /* Quita el triángulo por defecto de <details> donde se usa como botón. */

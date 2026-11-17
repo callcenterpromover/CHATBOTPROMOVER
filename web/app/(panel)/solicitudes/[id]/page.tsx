@@ -221,7 +221,7 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
       </section>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <div className="space-y-5 lg:col-span-2">
+        <div className="min-w-0 space-y-5 lg:col-span-2">
           <Tarjeta titulo={`Alertas (${(alertas.data ?? []).filter((a) => !a.resuelta).length} abiertas)`}>
             {(alertas.data ?? []).length === 0 ? (
               <p className="text-sm text-slate-500">Sin alertas para esta solicitud.</p>
@@ -232,9 +232,11 @@ export default async function PaginaSolicitud({ params, searchParams }: PageProp
                     key={a.id}
                     className={`rounded-lg border px-4 py-3 ${a.resuelta ? "border-slate-200 bg-slate-50" : "border-amber-200 bg-amber-50"}`}
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="font-mono text-xs text-slate-500">{a.codigo}</p>
+                        <p className="text-xs font-semibold text-slate-700" title={a.codigo}>
+                          {a.codigo.charAt(0) + a.codigo.slice(1).replaceAll("_", " ").toLowerCase()}
+                        </p>
                         <p className={`mt-1 text-sm ${a.resuelta ? "text-slate-500 line-through" : "text-slate-900"}`}>
                           {a.detalle}
                         </p>

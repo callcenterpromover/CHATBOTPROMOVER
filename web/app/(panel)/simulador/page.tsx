@@ -112,13 +112,20 @@ export default async function PaginaSimulador({ searchParams }: PageProps<"/simu
                   </option>
                 ))}
               </select>
-              <button type="submit" className={claseBotonSecundario}>
-                📎 Adjuntar
+              <button type="submit" className={`${claseBotonSecundario} shrink-0 gap-1.5`}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M13.5 6.5l-5.8 5.8a1.6 1.6 0 002.3 2.3l6-6a3.2 3.2 0 00-4.5-4.5l-6.2 6.2a4.8 4.8 0 006.8 6.8l5.2-5.2" />
+                </svg>
+                Adjuntar
               </button>
             </form>
             <form action={enviarAudio.bind(null, tel)}>
-              <button type="submit" className={claseBotonSecundario}>
-                🎤 Audio
+              <button type="submit" className={`${claseBotonSecundario} gap-1.5`}>
+                <svg aria-hidden="true" viewBox="0 0 20 20" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+                  <rect x="7" y="2.5" width="6" height="10" rx="3" />
+                  <path d="M4.5 9.5a5.5 5.5 0 0011 0M10 15v2.5" />
+                </svg>
+                Audio
               </button>
             </form>
           </div>

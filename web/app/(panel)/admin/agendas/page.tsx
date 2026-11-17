@@ -8,6 +8,7 @@ import { REQUISITOS, type IpsSos, type Lineamiento } from "@/lib/lineamientos";
 import { requerirRol } from "@/lib/supabase/server";
 import { eliminarRegistro, guardarConfig, guardarFranjas, guardarIps, guardarLineamiento, guardarServicio } from "./actions";
 import { EditorFranjas } from "./editor-franjas";
+import { SelectorServicio } from "./selector-servicio";
 
 const MENSAJES: Record<string, Aviso> = {
   servicio: { tono: "ok", texto: "Servicio actualizado." },
@@ -66,13 +67,13 @@ export default async function PaginaAgendas({ searchParams }: PageProps<"/admin/
       </div>
       <Notificaciones avisos={MENSAJES[clave] ? [MENSAJES[clave]] : []} />
 
-      <nav aria-label="Secciones de Agendas" className="flex gap-1 border-b border-slate-200">
+      <nav aria-label="Secciones de Agendas" className="-mx-4 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
         {VISTAS.map((v) => (
           <Link
             key={v.id}
             href={v.id === "servicios" ? "/admin/agendas" : `/admin/agendas?v=${v.id}`}
             aria-current={vista === v.id ? "page" : undefined}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+            className={`-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap ${
               vista === v.id ? "border-teal-700 text-teal-800" : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
@@ -102,7 +103,13 @@ function Servicios({ cat, seleccion, grupo }: { cat: Catalogo; seleccion: string
 
   return (
     <div className="grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
-      <aside className="space-y-4">
+      <SelectorServicio
+        actual={nuevo ? "nuevo" : String(servicio?.id ?? "")}
+        grupos={(["SALUD_TOTAL", "SOS", "TODAS"] as const)
+          .map((eps) => ({ eps: EPS_SERVICIO[eps], servicios: cat.servicios.filter((s) => s.eps === eps) }))
+          .filter((g) => g.servicios.length)}
+      />
+      <aside className="hidden space-y-4 lg:block">
         {(["SALUD_TOTAL", "SOS", "TODAS"] as const).map((eps) => {
           const lista = cat.servicios.filter((s) => s.eps === eps);
           if (!lista.length) return null;

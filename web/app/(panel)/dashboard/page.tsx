@@ -49,13 +49,10 @@ function sumarJson(filas: FilaMetrica[], campo: "casos_por_operador_json" | "cas
   return total;
 }
 
-function Kpi({ icono, titulo, valor, detalle, href }: { icono: string; titulo: string; valor: string | number; detalle?: string; href?: string }) {
+function Kpi({ titulo, valor, detalle, href }: { titulo: string; valor: string | number; detalle?: string; href?: string }) {
   const contenido = (
     <>
-      <p className="flex items-center gap-1.5 text-xs text-slate-500">
-        <span aria-hidden="true">{icono}</span>
-        {titulo}
-      </p>
+      <p className="text-xs text-slate-500">{titulo}</p>
       <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">{valor}</p>
       {detalle ? <p className="mt-0.5 text-xs text-slate-500">{detalle}</p> : null}
     </>
@@ -224,21 +221,18 @@ export default async function PaginaDashboard() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi
-          icono="⏱️"
           titulo="Tiempo promedio de espera"
           valor={duracion(promedio30)}
           detalle={`Hoy: ${duracion(promedioHoy)} · ${total30} casos en 30 días`}
         />
         <Kpi
-          icono="📋"
           titulo="Pacientes en espera activa"
           valor={Number(r.total ?? 0)}
           detalle={`${Number(r.sin_asignar ?? 0)} sin asignar · ${Number(r.mas_de_15_dias ?? 0)} con más de 15 días`}
           href="/lista-espera?tab=bolsa"
         />
-        <Kpi icono="✅" titulo="Gestionadas en la jornada" valor={deHoy?.total_gestionadas ?? 0} detalle={hoy} />
+        <Kpi titulo="Gestionadas en la jornada" valor={deHoy?.total_gestionadas ?? 0} detalle={hoy} />
         <Kpi
-          icono="🚨"
           titulo="Casos con alertas documentales"
           valor={totalDocumentales}
           detalle={admin ? `${(alertas ?? []).length} alertas abiertas en total` : "Solicitudes con al menos una"}
@@ -247,19 +241,19 @@ export default async function PaginaDashboard() {
       </div>
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Tarjeta titulo="👤 Rendimiento por operador">
+        <div className="min-w-0 lg:col-span-2">
+          <Tarjeta titulo="Casos gestionados por operador">
             {rendimiento.length === 0 ? (
               <p className="text-sm text-slate-500">Todavía no hay casos gestionados ni asignados.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[420px] text-left text-sm">
+                <table className="w-full text-left text-sm">
                   <thead className="text-xs text-slate-500">
                     <tr>
                       <th className="py-2 pr-4 font-medium">Operador</th>
-                      <th className="py-2 pr-4 text-right font-medium">Gestionadas hoy</th>
-                      <th className="py-2 pr-4 text-right font-medium">Últimos 30 días</th>
-                      {admin ? <th className="py-2 text-right font-medium">En su cola ahora</th> : null}
+                      <th className="py-2 pr-4 text-right font-medium">Hoy</th>
+                      <th className="py-2 pr-4 text-right font-medium">30 días</th>
+                      {admin ? <th className="py-2 text-right font-medium">En cola</th> : null}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -278,7 +272,7 @@ export default async function PaginaDashboard() {
           </Tarjeta>
         </div>
 
-        <Tarjeta titulo="🏥 Distribución por EPS">
+        <Tarjeta titulo="Distribución por EPS">
           <p className="mb-2 text-xs font-medium text-slate-500">En espera ahora</p>
           <Barras datos={epsActivas} vacio="No hay solicitudes activas." />
           <p className="mt-5 mb-2 text-xs font-medium text-slate-500">Gestionadas (30 días)</p>
@@ -287,7 +281,7 @@ export default async function PaginaDashboard() {
       </div>
 
       {admin ? (
-        <Tarjeta titulo="🚨 Alertas documentales abiertas">
+        <Tarjeta titulo="Alertas documentales abiertas">
           <Barras datos={documentales} vacio="No hay alertas documentales abiertas." />
         </Tarjeta>
       ) : null}

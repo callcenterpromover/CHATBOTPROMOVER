@@ -65,7 +65,7 @@ export default async function PaginaUsuarios({ searchParams }: PageProps<"/admin
       ) : null}
 
       <div className="grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <Tarjeta titulo={`Usuarios (${(operadores ?? []).length})`}>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[640px] text-left text-sm">

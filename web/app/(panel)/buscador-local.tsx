@@ -30,7 +30,7 @@ export function BuscadorLocal() {
   }
 
   return (
-    <label className="col-span-2 text-xs text-slate-500">
+    <label className="block text-xs text-slate-500">
       Buscar en esta lista
       <input
         type="search"
