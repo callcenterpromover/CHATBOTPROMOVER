@@ -15,7 +15,7 @@ def _cfg(tmp_path: Path, **cambios) -> Config:
         meta_api_version="v23.0", tesseract_cmd="tesseract", tessdata_dir=tmp_path,
         tmp_dir=tmp_path / "tmp", entrada_dir=tmp_path / "entrada", intervalo_segundos=1,
         permitir_fuente_local=False, max_bytes=1024, max_intentos=3, max_paginas_pdf=15,
-        panel_url="", worker_secret="",
+        panel_url="", worker_secret="", kapso_api_key="", kapso_phone_number_id="",
     )
     base.update(cambios)
     return Config(**base)
@@ -76,3 +76,24 @@ def test_purgar_borra_temporales(tmp_path):
     (cfg.tmp_dir / "8.bin").write_bytes(b"x")
     assert fuentes.purgar(cfg, conservar={8}) == 1
     assert [p.name for p in cfg.tmp_dir.iterdir()] == ["8.bin"]
+
+
+@pytest.mark.parametrize("url,valida", [
+    ("https://api.kapso.ai/meta/whatsapp/media_download?token=abc", True),
+    ("http://api.kapso.ai/meta/whatsapp/media_download?token=abc", False),
+    ("https://api.kapso.ai.atacante.com/x", False),
+    ("https://atacante.com/?h=api.kapso.ai", False),
+])
+def test_descarga_kapso_solo_desde_su_dominio(url, valida):
+    assert fuentes.url_de_kapso_valida(url) is valida
+
+
+@pytest.mark.parametrize("media_id", ["kapso:../x", "kapso:abc", "kapso:1234", "kapso:"])
+def test_ids_kapso_invalidos_no_llegan_a_la_api(tmp_path, media_id):
+    with pytest.raises(fuentes.MedioNoDisponible):
+        fuentes.descargar(media_id, 1, _cfg(tmp_path, kapso_api_key="k", kapso_phone_number_id="1"))
+
+
+def test_kapso_sin_credenciales_no_descarga(tmp_path):
+    with pytest.raises(fuentes.MedioNoDisponible):
+        fuentes.descargar("kapso:1234567890", 1, _cfg(tmp_path))

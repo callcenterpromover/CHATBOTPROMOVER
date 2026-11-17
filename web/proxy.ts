@@ -53,7 +53,7 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
-// /api/whatsapp y /api/interno no usan sesión: se protegen con la firma de Meta y con WORKER_SECRET.
+// Webhooks (/api/whatsapp, /api/webhook) e /api/interno no usan sesión: se protegen con firmas y WORKER_SECRET.
 export const config = {
-  matcher: ["/((?!api/whatsapp|api/interno|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  matcher: ["/((?!api/whatsapp|api/webhook|api/interno|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

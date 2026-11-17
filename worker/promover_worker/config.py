@@ -25,6 +25,8 @@ class Config:
     supabase_url: str
     supabase_secret_key: str
     meta_token: str
+    kapso_api_key: str
+    kapso_phone_number_id: str
     meta_api_version: str
     tesseract_cmd: str
     tessdata_dir: Path
@@ -49,6 +51,8 @@ def cargar() -> Config:
         supabase_url=valor("SUPABASE_URL").rstrip("/"),
         supabase_secret_key=valor("SUPABASE_SECRET_KEY"),
         meta_token=valor("META_WHATSAPP_TOKEN"),
+        kapso_api_key=valor("KAPSO_API_KEY"),
+        kapso_phone_number_id=valor("KAPSO_PHONE_NUMBER_ID"),
         meta_api_version=valor("META_API_VERSION", "v23.0"),
         tesseract_cmd=valor("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
         tessdata_dir=RAIZ / "tessdata",

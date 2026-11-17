@@ -2,6 +2,7 @@
 // respuesta en `mensajes_simulador` para mostrarla en el panel. En WhatsApp real no se guarda nada.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { enviarPorKapso } from "./kapso";
 import type { Canal } from "./motor";
 
 export function modoSimulacion() {
@@ -38,5 +39,7 @@ export async function enviar(db: SupabaseClient, canal: Canal, telefono: string,
     if (error) throw new Error("simulador_guardar");
     return;
   }
-  for (const texto of textos) await enviarWhatsApp(telefono, texto); // en orden
+  // Con credenciales de Kapso se envía por su proxy; si no, directo por la API de Meta.
+  const envio = process.env.KAPSO_API_KEY ? enviarPorKapso : enviarWhatsApp;
+  for (const texto of textos) await envio(telefono, texto); // en orden
 }

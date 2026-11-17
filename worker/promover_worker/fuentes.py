@@ -50,6 +50,56 @@ def url_de_meta_valida(url: str) -> bool:
     return u.scheme == "https" and any(host == d[1:] or host.endswith(d) for d in _DOMINIOS_META)
 
 
+KAPSO_API = "https://api.kapso.ai/meta/whatsapp/v24.0"
+
+
+def url_de_kapso_valida(url: str) -> bool:
+    try:
+        u = urlparse(url)
+    except ValueError:
+        return False
+    return u.scheme == "https" and (u.hostname or "").lower() == "api.kapso.ai"
+
+
+def _guardar_respuesta(respuesta: httpx.Response, destino: Path, cfg: Config) -> None:
+    if respuesta.status_code in (401, 403, 404):
+        raise MedioNoDisponible
+    respuesta.raise_for_status()
+    total = 0
+    with destino.open("wb") as f:
+        for bloque in respuesta.iter_bytes():
+            total += len(bloque)
+            if total > cfg.max_bytes:
+                raise FormatoNoSoportado
+            f.write(bloque)
+
+
+def _descargar_kapso(media_id: str, destino: Path, cfg: Config) -> Path:
+    """Medios que llegan por Kapso: se pide un enlace temporal (4 min) a su proxy de Meta y se descarga.
+    La clave solo se envía a api.kapso.ai."""
+    if not re.fullmatch(r"\d{5,30}", media_id) or not cfg.kapso_api_key or not cfg.kapso_phone_number_id:
+        raise MedioNoDisponible
+    with httpx.Client(timeout=60, follow_redirects=False) as http:
+        info = http.get(
+            f"{KAPSO_API}/{media_id}",
+            params={"phone_number_id": cfg.kapso_phone_number_id},
+            headers={"X-API-Key": cfg.kapso_api_key},
+        )
+        if info.status_code in (400, 404):
+            raise MedioNoDisponible
+        info.raise_for_status()
+        datos = info.json()
+        if int(datos.get("file_size") or 0) > cfg.max_bytes:
+            raise FormatoNoSoportado
+        url = str(datos.get("download_url") or "")
+        if not url_de_kapso_valida(url):
+            raise MedioNoDisponible
+        # El enlace ya trae su propio token: no se envía la clave a la descarga.
+        with http.stream("GET", url) as respuesta:
+            _guardar_respuesta(respuesta, destino, cfg)
+    return destino
+
+
 def descargar(media_id: str, trabajo_id: int, cfg: Config) -> Path:
     cfg.tmp_dir.mkdir(parents=True, exist_ok=True)
     destino = cfg.tmp_dir / f"{trabajo_id}.bin"
@@ -63,6 +113,9 @@ def descargar(media_id: str, trabajo_id: int, cfg: Config) -> Path:
             raise MedioNoDisponible
         shutil.copyfile(origen, destino)
         return destino
+
+    if media_id.startswith("kapso:"):
+        return _descargar_kapso(media_id.removeprefix("kapso:"), destino, cfg)
 
     # Los IDs de medios de Meta son numéricos: cualquier otra cosa no se envía a la API.
     if not re.fullmatch(r"\d{5,30}", media_id) or not cfg.meta_token:
