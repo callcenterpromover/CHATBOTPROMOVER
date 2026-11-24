@@ -6,6 +6,7 @@
 // recibir documentos antes de la autorización.
 
 import { franjasPara, opcionesPaciente, serviciosPara, type Catalogo, type ServicioCita } from "../horarios";
+import { claseServicio, diasDesde, DIAS_MAX_INASISTENCIA, interpretarUltimaAsistencia, requiereHistoria, requiereOps } from "./flujo";
 import { M } from "./mensajes";
 
 export type Canal = "whatsapp" | "simulador";
@@ -31,7 +32,9 @@ export type Paso =
   | "EDAD"
   | "ORDEN"
   | "HISTORIA"
-  | "TERAPIA_PREVIA"
+  | "OPS"
+  | "TERAPIA_PREVIA" // paso anterior al flujo por tipo; las conversaciones que iban ahí siguen
+  | "ULTIMA_ASISTENCIA"
   | "PLAN"
   | "PREFERENCIA"
   | "FACTORES"
@@ -44,6 +47,7 @@ export type Datos = {
   paginas?: number;
   opciones?: number[]; // IDs de servicio del último menú mostrado (0 = "Especialistas")
   franjas?: string[]; // franjas ofrecidas en la pregunta de preferencia
+  planRecibido?: boolean; // el paciente envió el plan antes de que se lo pidiéramos
 };
 
 const OPCION_ESPECIALISTAS = 0;
@@ -59,7 +63,9 @@ export type CamposSolicitud = {
   servicio_cita_id?: number;
   edad?: number;
   terapia_previa?: "SI" | "NO" | "NO_SABE";
+  ultima_asistencia?: string;
   plan_estado?: "REQUERIDO_PENDIENTE";
+  autorizacion_estado?: "NO_RECIBIDA";
   preferencia_horario?: string;
   factores?: string[];
   factores_origen?: "DECLARADO";
@@ -81,6 +87,9 @@ export type SolicitudContexto = {
   servicio_cita_id?: number | null;
   edad?: number | null;
   historia_estado?: string | null;
+  ultima_asistencia?: string | null;
+  plan_estado?: string | null;
+  autorizacion_estado?: string | null;
 } | null;
 
 /** `catalogo` viene del panel Agendas; sin él (o sin servicios) el bot pide servicio y horario en texto libre. */
@@ -104,7 +113,8 @@ export function normalizar(texto: string): string {
 
 const SI = /^(si|s|claro|acepto|autorizo|de acuerdo|ok|okay|dale|listo si|si acepto|si autorizo|si senor|si senora)$/;
 const NO = /^(no|n|no acepto|no autorizo|no gracias)$/;
-const NO_SE = /^(no se|no sabe|no recuerdo|no estoy segur[oa]|ns)$/;
+const NO_SE = /^(no se|no sabe|no recuerdo|no me acuerdo|no estoy segur[oa]|ns)$/;
+const NO_TENGO = /\bno (la |lo |las |los )?tengo\b|\bno tengo (orden|ops|plan|historia)\b/;
 
 export const esSi = (t: string) => SI.test(normalizar(t));
 export const esNo = (t: string) => NO.test(normalizar(t));
@@ -134,8 +144,11 @@ function pregunta(paso: Paso, datos: Datos): string {
       return M.orden;
     case "HISTORIA":
       return M.historia;
+    case "OPS":
+      return M.ops;
     case "TERAPIA_PREVIA":
-      return M.terapiaPrevia;
+    case "ULTIMA_ASISTENCIA":
+      return M.ultimaAsistencia;
     case "PLAN":
       return M.plan;
     case "PREFERENCIA":
@@ -155,15 +168,19 @@ function numeroOpcion(t: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-function resumen(s: SolicitudContexto, datos: Datos): string {
+function resumen(s: SolicitudContexto & { ultima_asistencia?: string | null }, datos: Datos, servicio: ServicioCita | null): string {
   const lineas = [
-    "Resumen de lo recibido:",
+    "Esto es lo que registramos:",
     `• Paciente: ${s?.nombre ?? "—"}`,
     `• Documento: ${s?.documento ?? "—"}`,
     `• EPS: ${s?.eps_texto ?? "—"}`,
     `• Servicio: ${s?.servicio_texto ?? "—"}`,
-    `• Historia clínica: ${datos.paginas ? `${datos.paginas} página(s)` : "no recibida"}`,
   ];
+  if (servicio && claseServicio(servicio) === "TERAPIA") {
+    if (s?.ultima_asistencia) lineas.push(`• Última terapia: ${s.ultima_asistencia.split("-").reverse().join("/")}`);
+  } else if (!servicio || requiereHistoria(servicio)) {
+    lineas.push(`• Historia clínica: ${datos.paginas ? `${datos.paginas} página(s)` : "pendiente"}`);
+  }
   return lineas.join("\n");
 }
 
@@ -215,9 +232,30 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
     return pregunta(p, datos);
   };
 
-  // Paso siguiente según lo que falte (conversaciones iniciadas con el orden anterior incluidas).
-  const despuesDeEdad = (): Paso => (sol.servicio_texto ? "ORDEN" : "SERVICIO");
-  const despuesDeServicio = (): Paso => (sol.edad == null ? "EDAD" : "ORDEN");
+  // --- Flujo por tipo de solicitud (docs/superpowers/specs/2026-11-24-flujo-conversacion-bot.md) ---
+  // Terapia: última asistencia → plan. Valoración/especialista: orden → (historia) → (OPS).
+  // Sin catálogo (servicio en texto libre) se conserva el flujo anterior: orden → historia.
+  const clase = () => {
+    const s = servicioElegido();
+    return s ? claseServicio(s) : null;
+  };
+  const inicioDocumentos = (): Paso => (clase() === "TERAPIA" ? "ULTIMA_ASISTENCIA" : "ORDEN");
+  const despuesDeEdad = (): Paso => (sol.servicio_texto ? inicioDocumentos() : "SERVICIO");
+  const despuesDeServicio = (): Paso => (sol.edad == null ? "EDAD" : inicioDocumentos());
+  const despuesDeOrden = (): Paso => {
+    const s = servicioElegido();
+    if (!s || requiereHistoria(s)) return "HISTORIA";
+    return despuesDeHistoria();
+  };
+  const despuesDeHistoria = (): Paso => {
+    const s = servicioElegido();
+    if (s && requiereOps(s, sol.eps, sol.edad)) {
+      act({ autorizacion_estado: "NO_RECIBIDA" });
+      return "OPS";
+    }
+    return "PREFERENCIA";
+  };
+  const despuesDeUltimaAsistencia = (): Paso => (datos.planRecibido ? "PREFERENCIA" : "PLAN");
 
   const elegirServicio = (s: ServicioCita): Resultado => {
     if (s.edad_minima != null && sol.edad != null && sol.edad < s.edad_minima) {
@@ -302,7 +340,19 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
         return fin();
       case "ORDEN":
         acciones.push({ tipo: "encolar", mediaId: entrada.mediaId, tipoDocumento: "ORDEN" });
-        ir("HISTORIA", M.ordenRecibida);
+        ir(despuesDeOrden(), M.ordenRecibida);
+        return fin();
+      case "OPS":
+        acciones.push({ tipo: "encolar", mediaId: entrada.mediaId, tipoDocumento: "AUTORIZACION" });
+        ir("PREFERENCIA", M.opsRecibida);
+        return fin();
+      case "ULTIMA_ASISTENCIA":
+      case "TERAPIA_PREVIA":
+        // Mandó el plan antes de la fecha: se guarda y se sigue esperando la fecha.
+        acciones.push({ tipo: "encolar", mediaId: entrada.mediaId, tipoDocumento: "PLAN" });
+        datos.planRecibido = true;
+        respuestas.push(M.planRecibido, preguntar("ULTIMA_ASISTENCIA"));
+        paso = "ULTIMA_ASISTENCIA";
         return fin();
       case "HISTORIA":
         acciones.push({ tipo: "encolar", mediaId: entrada.mediaId, tipoDocumento: "HISTORIA" });
@@ -462,8 +512,16 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
     }
 
     case "ORDEN":
-      if (/no (la )?tengo|no tengo orden/.test(t)) respuestas.push(M.faltaOrden);
-      else respuestas.push(M.orden);
+      if (NO_TENGO.test(t)) {
+        // Sin orden no hay valoración ni especialista: la solicitud queda pendiente y se cierra la conversación.
+        acciones.push({
+          tipo: "alerta",
+          codigo: "SIN_ORDEN",
+          detalle: "El paciente no tiene la orden médica. El bot le indicó pedirla a su EPS y enviarla por este chat.",
+        });
+        paso = "FINAL";
+        respuestas.push(M.faltaOrden);
+      } else respuestas.push(M.orden);
       return fin();
 
     case "HISTORIA":
@@ -473,31 +531,60 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
           return fin();
         }
         if (sol.historia_estado === "POSIBLEMENTE_INCOMPLETA") respuestas.push(M.historiaIncompleta);
-        ir("TERAPIA_PREVIA");
-      } else if (/no (la )?tengo/.test(t)) {
-        ir("TERAPIA_PREVIA", M.faltaHistoria);
+        ir(despuesDeHistoria());
+      } else if (NO_TENGO.test(t)) {
+        ir(despuesDeHistoria(), M.faltaHistoria);
       } else {
         respuestas.push(datos.paginas ? M.paginaRecibida(datos.paginas) : M.historia);
       }
       return fin();
 
-    case "TERAPIA_PREVIA": {
-      const valor = NO_SE.test(t) ? "NO_SABE" : esSi(texto) ? "SI" : esNo(texto) ? "NO" : null;
-      if (!valor) {
-        respuestas.push(M.terapiaPrevia);
+    case "OPS":
+      if (NO_TENGO.test(t)) ir("PREFERENCIA", M.faltaOps);
+      else respuestas.push(M.ops);
+      return fin();
+
+    case "TERAPIA_PREVIA":
+    case "ULTIMA_ASISTENCIA": {
+      if (paso === "TERAPIA_PREVIA" && clase() !== "TERAPIA") {
+        // Conversación del flujo anterior que no es continuidad: sigue con lo que falta.
+        ir("PREFERENCIA");
         return fin();
       }
-      // RB-017 / RB-018: continuidad de Terapia ocupacional o Fonoaudiología exige el plan.
-      const servicio = normalizar(sol.servicio_texto ?? "");
-      const requierePlan = valor === "SI" && /ocupacional|fonoaudiolog|lenguaje|maxilofacial/.test(servicio);
-      act(requierePlan ? { terapia_previa: valor, plan_estado: "REQUERIDO_PENDIENTE" } : { terapia_previa: valor });
-      if (requierePlan) ir("PLAN");
-      else ir("PREFERENCIA", valor === "NO" ? M.terapiaNoIniciada : undefined);
+      if (NO_SE.test(t)) {
+        acciones.push({
+          tipo: "alerta",
+          codigo: "CONTINUIDAD_SIN_FECHA",
+          detalle: "El paciente no recuerda la fecha de su última terapia. Verificarla antes de agendar la continuidad.",
+        });
+        ir(despuesDeUltimaAsistencia());
+        return fin();
+      }
+      const fecha = interpretarUltimaAsistencia(texto, ctx.ahora);
+      if (!fecha) {
+        respuestas.push(M.ultimaAsistenciaInvalida);
+        paso = "ULTIMA_ASISTENCIA";
+        return fin();
+      }
+      act({ ultima_asistencia: fecha });
+      const dias = diasDesde(fecha, ctx.ahora);
+      if (dias > DIAS_MAX_INASISTENCIA) {
+        acciones.push({
+          tipo: "alerta",
+          codigo: "CONTINUIDAD_VENCIDA",
+          detalle: `Última asistencia hace ${dias} días (máximo ${DIAS_MAX_INASISTENCIA}). El bot le indicó ir a medicina general de su EPS para renovar órdenes y documentos.`,
+        });
+        paso = "FINAL";
+        respuestas.push(M.continuidadVencida(dias));
+        return fin();
+      }
+      if (!datos.planRecibido) act({ plan_estado: "REQUERIDO_PENDIENTE" });
+      ir(despuesDeUltimaAsistencia());
       return fin();
     }
 
     case "PLAN":
-      if (/no (lo )?tengo/.test(t)) ir("PREFERENCIA", M.faltaPlan);
+      if (NO_TENGO.test(t)) ir("PREFERENCIA", M.faltaPlan);
       else respuestas.push(M.plan);
       return fin();
 
@@ -535,7 +622,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
       if ((sol.edad ?? 0) >= 60) factores.push("ADULTO_MAYOR");
       if (factores.length) act({ factores, factores_origen: "DECLARADO" });
       paso = "FINAL";
-      respuestas.push(resumen(sol, datos), M.recibida);
+      respuestas.push(resumen(sol, datos, servicioElegido()), M.recibida);
       return fin();
     }
 
@@ -553,13 +640,15 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
   return fin();
 
   function epsOtra(nombreEps: string): Resultado {
+    // PROMOVER solo atiende Salud Total y SOS por este canal: no se hacen preguntas que no van a servir.
     act({ eps: "OTRA", eps_texto: nombreEps });
     acciones.push({
       tipo: "alerta",
       codigo: "EPS_FUERA_DE_ALCANCE",
-      detalle: `El paciente declaró la EPS «${nombreEps}», distinta de Salud Total y SOS. No se aplicaron reglas automáticas; decidir manualmente cómo continuar.`,
+      detalle: `El paciente declaró la EPS «${nombreEps}», distinta de Salud Total y SOS. El bot terminó la conversación; decidir manualmente si se contacta.`,
     });
-    ir("EDAD", M.epsFueraDeAlcance);
+    paso = "FINAL";
+    respuestas.push(M.epsFueraDeAlcance);
     return fin();
   }
 }

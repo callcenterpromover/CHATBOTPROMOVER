@@ -38,7 +38,7 @@ describe("días y rangos", () => {
 describe("catálogo por EPS y edad", () => {
   it("Salud Total no ve servicios ni especialistas de SOS", () => {
     const { principales, especialistas } = serviciosPara(CAT, "SALUD_TOTAL");
-    expect(principales.map((s) => s.codigo)).toEqual(["VAL_FISIO_ST", "TF_ST", "VAL_FONO", "VAL_RESPIRATORIA", "T_RESPIRATORIA", "SIN_HORARIO"]);
+    expect(principales.map((s) => s.codigo)).toEqual(["VAL_FISIO_ST", "TF_ST", "VAL_FONO", "VAL_RESPIRATORIA", "T_RESPIRATORIA", "VAL_SIN_HORARIO"]);
     expect(especialistas).toEqual([]);
   });
 

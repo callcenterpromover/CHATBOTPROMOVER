@@ -1,12 +1,12 @@
-// Textos del bot (documento 03). Los marcados como PRELIMINAR deben aprobarse por PROMOVER
-// (área jurídica / protección de datos) antes de usarse con pacientes reales.
+// Textos del bot (documento 03; flujo por tipo: docs/superpowers/specs/2026-11-24-flujo-conversacion-bot.md).
+// Los marcados como PRELIMINAR deben aprobarse por PROMOVER (área jurídica / protección de datos)
+// antes de usarse con pacientes reales: no se reescriben sin esa aprobación.
 
 export const M = {
   bienvenida:
-    "Hola, te damos la bienvenida a PROMOVER S.A.S. 👋\n" +
-    "Por este canal recibimos solicitudes de cita. Las citas no se confirman automáticamente: " +
-    "nuestro equipo revisa cada solicitud y se comunica contigo.\n" +
-    "Por favor no envíes audios ni hagas llamadas por este medio.",
+    "Hola, te escribe el equipo de PROMOVER S.A.S. 👋\n" +
+    "Por aquí recibimos las solicitudes de cita. Revisamos cada una y te contactamos para asignarla, así que la cita no queda confirmada en este chat.\n" +
+    "Por favor no envíes audios ni llames a este número.",
 
   // PRELIMINAR: texto de autorización (Ley 1581 de 2012). Requiere aprobación jurídica.
   consentimiento:
@@ -15,77 +15,88 @@ export const M = {
     "Los usamos solo para gestionar esta solicitud y los eliminamos cuando termina la gestión.\n\n" +
     "¿Autorizas este tratamiento? Responde *SÍ* o *NO*.",
 
-  consentimientoAceptado: "Gracias. Vamos a registrar la solicitud paso a paso.",
+  consentimientoAceptado: "Gracias. Te voy haciendo las preguntas una por una.",
   consentimientoRechazado:
-    "Entendido. Sin tu autorización no podemos registrar la solicitud. Si cambias de opinión, escríbenos de nuevo.",
+    "Está bien. Sin tu autorización no podemos registrar la solicitud. Si cambias de opinión, escríbenos cuando quieras.",
   consentimientoAntesDeDocumentos:
     "Antes de recibir documentos necesitamos tu autorización para tratar los datos. Responde *SÍ* o *NO*.",
 
-  documento: "Escribe el número de documento del paciente, sin puntos ni comas.",
+  documento: "¿Cuál es el número de documento del paciente? Escríbelo sin puntos ni comas.",
   documentoInvalido:
-    "El número de documento debe tener solo números (o letras y números si es pasaporte), sin puntos ni comas. Escríbelo de nuevo.",
+    "Escribe el número solo con números (o letras y números si es pasaporte), sin puntos ni comas.",
   confirmarDocumento: (doc: string) => `¿El número de documento es *${doc}*? Responde *SÍ* o *NO*.`,
 
-  nombre: "Escribe el nombre completo del paciente (nombres y apellidos).",
-  nombreInvalido: "Necesitamos el nombre completo, con nombres y apellidos. Escríbelo de nuevo.",
+  nombre: "¿Cuál es el nombre completo del paciente? Con nombres y apellidos.",
+  nombreInvalido: "Necesitamos nombres y apellidos. Escríbelo de nuevo, por favor.",
 
   eps:
-    "¿Cuál es la EPS del paciente? Responde con el número:\n1. Salud Total\n2. SOS (Servicio Occidental de Salud)\n3. Otra",
+    "¿De qué EPS es el paciente? Responde con el número:\n1. Salud Total\n2. SOS (Servicio Occidental de Salud)\n3. Otra",
   epsOtraPregunta: "¿Cuál es la EPS del paciente?",
   epsFueraDeAlcance:
-    "Gracias. Por ahora este canal está configurado para Salud Total y SOS, así que tu solicitud quedará registrada para revisión manual de nuestro equipo.",
+    "Gracias. Por este canal solo atendemos pacientes de Salud Total y SOS. Dejamos registrada tu solicitud y alguien del equipo la revisará para decirte si podemos atenderte.",
 
   servicio: "Escribe el servicio tal como aparece en la orden médica (por ejemplo: «Terapia física integral»).",
-  servicioInvalido: "Escribe el nombre del servicio que aparece en la orden, en una sola línea.",
+  servicioInvalido: "Escribe el servicio que aparece en la orden, en una sola línea.",
   servicioMenu: (opciones: string[]) =>
-    "¿Qué servicio necesita el paciente según la orden? Responde con el número:\n" +
+    "¿Qué servicio necesita el paciente? Responde con el número:\n" +
     opciones.map((o, i) => `${i + 1}. ${o}`).join("\n"),
   opcionEspecialistas: "Especialistas (fisiatría, ortopedia, equipo interdisciplinario, infiltraciones)",
   especialistaMenu: (opciones: string[]) =>
-    "¿Con qué especialista es la cita? Responde con el número:\n" +
+    "¿Con cuál especialista es la cita? Responde con el número:\n" +
     opciones.map((o, i) => `${i + 1}. ${o}`).join("\n") +
     "\n0. Volver al menú anterior",
   opcionInvalida: "Responde solo con el número de una de las opciones.",
   menorEspecialista: (edadMinima: number) =>
-    `En PROMOVER no atendemos a menores de ${edadMinima} años con especialistas, aunque tengan OPS. ` +
-    "Por favor acude a tu EPS para que te redirijan a otra IPS donde puedan atenderte.\n" +
+    `En PROMOVER los especialistas no atienden a menores de ${edadMinima} años, aunque tengan OPS. ` +
+    "Acude a tu EPS para que te remitan a otra IPS que sí pueda atenderte.\n" +
     "Si necesitas otro servicio, elige una opción del menú.",
 
   edad: "¿Qué edad tiene el paciente? Escribe solo el número.",
-  edadInvalida: "Escribe la edad del paciente solo con números (por ejemplo: 45).",
+  edadInvalida: "Escribe la edad solo con números, por ejemplo: 45.",
 
   orden:
-    "Envía una foto completa y legible de la *orden médica* (o el PDF). Que se vean todos los bordes y con buena luz.",
-  ordenRecibida: "Recibimos la orden. La revisaremos en un momento.",
+    "Envíanos una foto de la *orden médica* (o el PDF). Que se vea completa, con los bordes y buena luz.\n" +
+    "Si no la tienes, escribe *NO TENGO*.",
+  ordenRecibida: "Recibimos la orden.",
   faltaOrden:
-    "Para continuar con la revisión necesitamos una foto completa y legible de la orden de servicio. Por favor envíala por este chat. La solicitud todavía está pendiente y no corresponde a una cita confirmada.",
+    "Sin la orden médica no podemos continuar. Pídela en tu EPS y, cuando la tengas, envíanos la foto por este mismo chat: queda en tu solicitud.",
 
   historia:
-    "Ahora envía la *historia clínica completa*: una foto por página (o el PDF). Cuando termines de enviar todas las páginas, escribe *LISTO*.",
+    "Ahora envía la *historia clínica completa*, una foto por página (o el PDF). Cuando termines, escribe *LISTO*.\n" +
+    "Si no la tienes, escribe *NO TENGO*.",
   paginaRecibida: (n: number) =>
-    `Recibimos ${n === 1 ? "1 página" : `${n} páginas`}. Si hay más, envíalas; cuando termines escribe *LISTO*.`,
-  historiaSinPaginas: "Todavía no hemos recibido la historia clínica. Envía las fotos de cada página o el PDF.",
+    `Llevamos ${n === 1 ? "1 página" : `${n} páginas`}. Si hay más, envíalas; cuando termines escribe *LISTO*.`,
+  historiaSinPaginas: "Todavía no nos llega la historia clínica. Envía la foto de cada página o el PDF.",
   historiaIncompleta:
-    "Parece que faltan páginas de la historia clínica (en el documento aparece la numeración «Página X de Y»). Si las tienes, envíalas por este chat; si no, el equipo lo revisará.",
+    "Parece que faltan páginas de la historia clínica (el documento dice «Página X de Y»). Si las tienes, envíalas; si no, el equipo lo revisa.",
   faltaHistoria:
-    "Para preparar tu solicitud también necesitamos la historia clínica completa. Si no la tienes, debes solicitarla a tu EPS y enviarla por este medio. Por ahora la solicitud queda pendiente de ese documento.",
+    "Necesitamos la historia clínica para revisar el caso. Puedes pedirla en tu EPS y enviarla por aquí cuando la tengas; mientras tanto la solicitud queda pendiente.",
 
-  terapiaPrevia:
-    "¿El paciente ha recibido terapias para el diagnóstico que aparece en esta orden? Responde *SÍ*, *NO* o *NO SÉ*.\n" +
-    "(Te lo preguntamos porque las terapias realizadas por otro diagnóstico no cuentan como antecedente.)",
-  terapiaNoIniciada:
-    "Gracias por aclararlo. Vamos a dejar esta información registrada junto con la orden y la historia clínica para que el equipo revise cuál es la ruta que corresponde.",
+  ops:
+    "Para este servicio SOS pide la *OPS* (autorización de servicios). Envía la foto o el PDF.\n" +
+    "Si todavía no la tienes, escribe *NO TENGO*.",
+  opsRecibida: "Recibimos la OPS.",
+  faltaOps:
+    "La OPS la entrega SOS. Cuando la tengas, envíala por este chat; mientras tanto la solicitud queda pendiente.",
 
-  plan: "Como ya inició terapias, necesitamos una foto del *plan o programa de tratamiento*. Envíala ahora, o escribe *NO TENGO*.",
+  ultimaAsistencia:
+    "¿Cuándo fue la última terapia del paciente? Escribe la fecha (por ejemplo: 15/11) o cuántos días han pasado (por ejemplo: hace 5 días).",
+  ultimaAsistenciaInvalida:
+    "No entendí la fecha. Escríbela así: 15/11, o cuántos días han pasado, por ejemplo: hace 5 días. Si no la recuerdas, escribe *NO RECUERDO*.",
+  continuidadVencida: (dias: number) =>
+    `Han pasado ${dias} días desde la última terapia. Cuando son más de 20 días sin asistir hay que renovar el proceso: ` +
+    "pide una cita con medicina general en tu EPS para que te renueven la orden y los documentos. Cuando los tengas, escríbenos y empezamos de nuevo.",
+
+  plan: "Envíanos una foto del *plan de tratamiento* que te dieron en las terapias. Si no lo tienes, escribe *NO TENGO*.",
   planRecibido: "Recibimos el plan de tratamiento.",
   faltaPlan:
-    "Para revisar la continuidad de las terapias necesitamos una foto del plan o programa de tratamiento. Si no lo tienes, consulta con PROMOVER cómo obtenerlo. La solicitud seguirá pendiente hasta recibirlo.",
+    "Para continuar las terapias necesitamos el plan de tratamiento. Pídelo a tu terapeuta en PROMOVER y envíalo por aquí; mientras tanto la solicitud queda pendiente.",
 
   preferencia:
-    "¿Tienes alguna preferencia de día u horario? Es solo informativa, no es una reserva. Escribe tu preferencia o *NO*.",
+    "¿Tienes alguna preferencia de día u horario? La tenemos en cuenta, pero no es una reserva. Escríbela o responde *NO*.",
   preferenciaOpciones: (servicio: string, duracion: number, opciones: string[]) =>
-    `*${servicio}* (dura unos ${duracion} minutos) se atiende en estos horarios. ` +
-    "¿Cuál prefieres? Es solo una preferencia, no una reserva: el equipo revisará la disponibilidad y se comunicará contigo.\n" +
+    `*${servicio}* dura unos ${duracion} minutos y se atiende en estos horarios. ` +
+    "¿Cuál te sirve más? La tenemos en cuenta, pero no es una reserva: el equipo revisa la disponibilidad y te contacta.\n" +
     opciones.map((o, i) => `${i + 1}. ${o}`).join("\n") +
     `\n${opciones.length + 1}. Cualquier horario`,
 
@@ -96,28 +107,27 @@ export const M = {
   factoresInvalidos: "Responde con los números (por ejemplo: 1, 3) o escribe *NINGUNA*.",
 
   recibida:
-    "Gracias. Registramos la información recibida para revisión. Esto no confirma una cita ni garantiza disponibilidad. " +
-    "El equipo de PROMOVER revisará los documentos y se comunicará contigo si necesita información adicional o para continuar el proceso.",
+    "Listo, quedó registrada. Alguien del equipo de PROMOVER revisa los documentos y te contacta para asignar la cita o pedirte algo que falte. " +
+    "Mientras tanto, la cita no está confirmada.",
   yaRegistrada:
-    "Tu solicitud ya está registrada y en revisión. Esto no confirma una cita.\n" +
-    "Si necesitas enviar otro documento, envíalo por aquí. Para registrar una solicitud distinta (otra orden o diagnóstico), escribe *NUEVA*.",
+    "Tu solicitud ya está registrada y la estamos revisando; la cita todavía no está confirmada.\n" +
+    "Si te falta enviar un documento, mándalo por aquí. Para una solicitud distinta (otra orden u otro diagnóstico), escribe *NUEVA*.",
   documentoAgregado: "Recibimos el documento y lo agregamos a tu solicitud.",
-  documentosDespues: "Primero necesitamos algunos datos. Te pediremos los documentos en un momento.",
+  documentosDespues: "Primero necesitamos unos datos; los documentos te los pedimos en un momento.",
 
   audio:
-    "Para registrar correctamente tu solicitud, por favor escribe la información por este chat. En este canal no gestionamos audios ni llamadas.",
-  noSoportado: "Por este canal solo podemos recibir mensajes de texto, fotos y archivos PDF.",
+    "Por favor escribe la información por este chat. Aquí no podemos atender audios ni llamadas.",
+  noSoportado: "Por este canal solo recibimos texto, fotos y archivos PDF.",
 
   // PRELIMINAR: protocolo de urgencias pendiente de aprobación institucional (documento 08, pendiente 10).
   urgencia:
     "Este canal no atiende urgencias. Si el paciente tiene una urgencia, acude al servicio de urgencias más cercano o llama a la línea 123.",
-  persona: "Registramos que quieres hablar con una persona. El equipo te contactará. Mientras tanto, puedes seguir con la solicitud.",
-  cancelada:
-    "Registramos que no deseas continuar con la solicitud. El equipo la cerrará. Si cambias de opinión, escríbenos.",
+  persona: "Listo, le avisamos al equipo que quieres hablar con una persona y te contactarán. Mientras tanto puedes seguir con la solicitud.",
+  cancelada: "Entendido, no seguimos con la solicitud. Si cambias de opinión, escríbenos.",
 
   // Avisos después de leer un documento (los envía el sistema cuando el worker termina).
   reenvioIlegible:
-    "No logramos leer toda la información del documento. Por favor envía una nueva foto, con buena iluminación, enfocada y con todos los bordes visibles. Si tiene varias páginas, envíalas todas.",
+    "No logramos leer bien el documento. Envía una foto nueva, con buena luz, enfocada y con todos los bordes. Si tiene varias páginas, envíalas todas.",
   reenvioNoProcesable:
-    "No pudimos abrir uno de los archivos que enviaste. Por favor envíalo de nuevo como foto (JPG o PNG) o como PDF sin contraseña.",
+    "No pudimos abrir uno de los archivos. Envíalo de nuevo como foto (JPG o PNG) o como PDF sin contraseña.",
 } as const;

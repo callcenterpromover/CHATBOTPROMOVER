@@ -44,7 +44,6 @@ describe("flujo completo", () => {
         media("m-hist-1"),
         media("m-hist-2"),
         texto("LISTO"),
-        texto("no"),
         texto("En las mañanas"),
         texto("2"),
       ],
@@ -59,7 +58,6 @@ describe("flujo completo", () => {
       eps_texto: "Salud Total",
       servicio_texto: "Terapia física integral",
       edad: 44,
-      terapia_previa: "NO",
       preferencia_horario: "En las mañanas",
       factores: ["MOVILIDAD_REDUCIDA"],
       factores_origen: "DECLARADO",
@@ -126,11 +124,11 @@ describe("validación de datos", () => {
     expect(estado.paso).toBe("NOMBRE");
   });
 
-  it("EPS distinta queda para revisión manual con alerta", () => {
+  it("EPS distinta: termina la conversación con alerta para revisión manual", () => {
     const { estado, acciones, respuestas } = conversar([
       ...hastaDocumento, texto("1000000020"), texto("Laura Prueba"), texto("3"), texto("Nueva EPS"),
     ]);
-    expect(estado.paso).toBe("EDAD");
+    expect(estado.paso).toBe("FINAL");
     expect(campos(acciones)).toMatchObject({ eps: "OTRA", eps_texto: "Nueva EPS" });
     expect(acciones.some((a) => a.tipo === "alerta" && a.codigo === "EPS_FUERA_DE_ALCANCE")).toBe(true);
     expect(respuestas).toContain(M.epsFueraDeAlcance);
@@ -173,23 +171,15 @@ describe("documentos", () => {
 
   it("sin historia: lo indica y sigue, la solicitud queda pendiente", () => {
     const { estado, respuestas } = conversar([...hastaOrden, media("o"), texto("no la tengo")]);
-    expect(estado.paso).toBe("TERAPIA_PREVIA");
+    expect(estado.paso).toBe("PREFERENCIA");
     expect(respuestas).toContain(M.faltaHistoria);
   });
 
-  it("terapia ocupacional ya iniciada exige el plan (RB-017)", () => {
-    const s = { servicio_texto: "Terapia ocupacional" };
-    const r = conversar([...hastaOrden, media("o"), media("h1"), texto("listo"), texto("sí")], s);
-    expect(r.estado.paso).toBe("PLAN");
-    expect(campos(r.acciones)).toMatchObject({ terapia_previa: "SI", plan_estado: "REQUERIDO_PENDIENTE" });
-    const conPlan = conversar([...hastaOrden, media("o"), media("h1"), texto("listo"), texto("sí"), media("p")], s);
-    expect(conPlan.acciones.at(-1)).toEqual({ tipo: "encolar", mediaId: "p", tipoDocumento: "PLAN" });
-    expect(conPlan.estado.paso).toBe("PREFERENCIA");
-  });
-
-  it("terapia física iniciada no pide plan", () => {
-    const r = conversar([...hastaOrden, media("o"), media("h1"), texto("listo"), texto("sí")], { servicio_texto: "Terapia física" });
-    expect(r.estado.paso).toBe("PREFERENCIA");
+  it("sin orden: termina con alerta y le indica pedirla a su EPS", () => {
+    const { estado, acciones, respuestas } = conversar([...hastaOrden, texto("no la tengo")]);
+    expect(estado.paso).toBe("FINAL");
+    expect(respuestas.at(-1)).toBe(M.faltaOrden);
+    expect(acciones.some((a) => a.tipo === "alerta" && a.codigo === "SIN_ORDEN")).toBe(true);
   });
 
   it("documentos después del registro se agregan sin tipo", () => {
@@ -263,11 +253,11 @@ describe("servicios y horarios del panel Agendas", () => {
     expect(r.respuestas.join("\n")).toContain("1. Valoración de fisioterapia\n2. Terapia física");
     expect(r.respuestas.join("\n")).not.toContain("Especialistas");
 
-    const fin = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("1"), media("o"), media("h"), texto("listo"), texto("no")]);
+    const fin = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("1"), media("o"), media("h"), texto("listo")]);
     expect(fin.estado.paso).toBe("PREFERENCIA");
     expect(fin.respuestas.at(-1)).toContain("1. Lunes a viernes, de 7:00 a. m. a 12:00 p. m.");
     expect(fin.respuestas.at(-1)).toContain("3. Cualquier horario");
-    const elegida = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("1"), media("o"), media("h"), texto("listo"), texto("no"), texto("2")]);
+    const elegida = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("1"), media("o"), media("h"), texto("listo"), texto("2")]);
     expect(elegida.estado.paso).toBe("FACTORES");
     expect(campos(elegida.acciones).preferencia_horario).toBe("Lunes a viernes, de 1:15 a 4:45 p. m.");
   });
@@ -279,8 +269,9 @@ describe("servicios y horarios del panel Agendas", () => {
   });
 
   it("SOS: valoración OPS sin martes", () => {
-    const r = conCatalogo([...hastaEps, texto("2"), texto("40"), texto("1"), media("o"), media("h"), texto("listo"), texto("no")]);
+    const r = conCatalogo([...hastaEps, texto("2"), texto("40"), texto("1"), media("o"), media("h"), texto("listo")]);
     expect(campos(r.acciones).servicio_texto).toBe("Valoración de fisioterapia (OPS de terapia física integral)");
+    expect(r.estado.paso).toBe("PREFERENCIA"); // la valoración SOS no exige OPS
     expect(r.respuestas.at(-1)).not.toMatch(/martes/i);
   });
 
@@ -307,21 +298,76 @@ describe("servicios y horarios del panel Agendas", () => {
 
   it("fonoaudiología: niños y adultos ven franjas distintas", () => {
     const fono = (edad: string) =>
-      conCatalogo([...hastaEps, texto("1"), texto(edad), texto("3"), media("o"), media("h"), texto("listo"), texto("no")]).respuestas.at(-1)!;
+      conCatalogo([...hastaEps, texto("1"), texto(edad), texto("3"), media("o")]).respuestas.at(-1)!;
     expect(fono("8")).toContain("Lunes a viernes, de 7:00 a 8:30 a. m.");
     expect(fono("30")).toContain("Lunes y miércoles, de 1:15 a 1:30 p. m.");
     expect(fono("30")).not.toContain("7:00");
   });
 
   it("terapia respiratoria muestra los turnos de las 11", () => {
-    const r = conCatalogo([...hastaEps, texto("1"), texto("50"), texto("5"), media("o"), media("h"), texto("listo"), texto("no")]);
+    const r = conCatalogo([...hastaEps, texto("1"), texto("50"), texto("5"), texto("hace 3 dias"), media("p")]);
     expect(campos(r.acciones).servicio_texto).toBe("Terapia respiratoria");
     expect(r.respuestas.at(-1)).toContain("de 11:00 a 11:40 a. m.");
   });
 
   it("servicio sin franjas: la preferencia queda en texto libre", () => {
-    const r = conCatalogo([...hastaEps, texto("1"), texto("50"), texto("6"), media("o"), media("h"), texto("listo"), texto("no"), texto("los lunes")]);
+    const r = conCatalogo([...hastaEps, texto("1"), texto("50"), texto("6"), media("o"), texto("los lunes")]);
     expect(campos(r.acciones).preferencia_horario).toBe("los lunes");
     expect(r.respuestas).toContain(M.preferencia);
+  });
+
+  it("SOS fonoaudiología: después de la orden pide la OPS", () => {
+    const r = conCatalogo([...hastaEps, texto("2"), texto("30"), texto("2"), media("o")]);
+    expect(campos(r.acciones)).toMatchObject({ servicio_texto: "Valoración de fonoaudiología", autorizacion_estado: "NO_RECIBIDA" });
+    expect(r.estado.paso).toBe("OPS");
+    const conOps = conCatalogo([...hastaEps, texto("2"), texto("30"), texto("2"), media("o"), media("ops")]);
+    expect(conOps.acciones.at(-1)).toEqual({ tipo: "encolar", mediaId: "ops", tipoDocumento: "AUTORIZACION" });
+    expect(conOps.estado.paso).toBe("PREFERENCIA");
+    const sinOps = conCatalogo([...hastaEps, texto("2"), texto("30"), texto("2"), media("o"), texto("no la tengo")]);
+    expect(sinOps.respuestas).toContain(M.faltaOps);
+    expect(sinOps.estado.paso).toBe("PREFERENCIA");
+  });
+
+  it("Salud Total fonoaudiología: el direccionamiento es la orden, no pide OPS ni historia", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("30"), texto("3"), media("o")]);
+    expect(r.estado.paso).toBe("PREFERENCIA");
+  });
+
+  it("SOS especialista: orden e historia; OPS solo si es menor de edad", () => {
+    const n = (edad: string) =>
+      conCatalogo([...hastaEps, texto("2"), texto(edad)]).respuestas.at(-1)!.split("\n").find((l) => l.includes("Especialistas"))!.split(".")[0];
+    const adulto = conCatalogo([...hastaEps, texto("2"), texto("40"), texto(n("40")), texto("1"), media("o"), media("h"), texto("listo")]);
+    expect(adulto.estado.paso).toBe("PREFERENCIA");
+    const menor = conCatalogo([...hastaEps, texto("2"), texto("17"), texto(n("17")), texto("1"), media("o"), media("h"), texto("listo")]);
+    expect(menor.estado.paso).toBe("OPS");
+  });
+
+  it("terapia (continuidad): solo última asistencia y plan", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("2"), texto("10/11")]);
+    expect(r.estado.paso).toBe("PLAN");
+    expect(campos(r.acciones)).toMatchObject({ ultima_asistencia: "2026-11-10", plan_estado: "REQUERIDO_PENDIENTE" });
+    const conPlan = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("2"), texto("10/11"), media("p")]);
+    expect(conPlan.acciones.filter((a) => a.tipo === "encolar")).toEqual([{ tipo: "encolar", mediaId: "p", tipoDocumento: "PLAN" }]);
+    expect(conPlan.estado.paso).toBe("PREFERENCIA");
+  });
+
+  it("terapia con más de 20 días sin asistir: renovar con medicina general y termina", () => {
+    const r = conCatalogo([...hastaEps, texto("2"), texto("44"), texto("4"), texto("hace 3 semanas")]);
+    expect(r.estado.paso).toBe("FINAL");
+    expect(r.respuestas.at(-1)).toBe(M.continuidadVencida(21));
+    expect(r.acciones.some((a) => a.tipo === "alerta" && a.codigo === "CONTINUIDAD_VENCIDA")).toBe(true);
+    expect(r.acciones.some((a) => a.tipo === "encolar")).toBe(false);
+  });
+
+  it("terapia: si manda el plan antes de la fecha no se lo vuelve a pedir", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("2"), media("p"), texto("ayer")]);
+    expect(r.estado.paso).toBe("PREFERENCIA");
+    expect(campos(r.acciones).plan_estado).toBeUndefined();
+  });
+
+  it("fecha que no se entiende se vuelve a pedir", () => {
+    const r = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("2"), texto("la otra semana")]);
+    expect(r.estado.paso).toBe("ULTIMA_ASISTENCIA");
+    expect(r.respuestas.at(-1)).toBe(M.ultimaAsistenciaInvalida);
   });
 });

@@ -18,13 +18,13 @@ const base = {
 export const SERVICIOS_PRUEBA: ServicioCita[] = [
   { ...base, id: 1, codigo: "VAL_FISIO_ST", nombre: "Valoración de fisioterapia", duracion_min: 15, eps: "SALUD_TOTAL", orden: 10 },
   { ...base, id: 2, codigo: "TF_ST", nombre: "Terapia física", duracion_min: 45, eps: "SALUD_TOTAL", orden: 20 },
-  { ...base, id: 3, codigo: "VAL_FISIO_SOS", nombre: "Valoración de fisioterapia (OPS de terapia física integral)", duracion_min: 15, eps: "SOS", agenda: "FISIO_SOS", autorizacion_sos: "SIEMPRE", orden: 10 },
-  { ...base, id: 5, codigo: "FISIATRIA", nombre: "Fisiatría", nombre_visoft: "Consulta de primera vez con Medicina Física y Rehabilitación", duracion_min: 15, eps: "SOS", menu: "ESPECIALISTAS", edad_minima: 16, agenda: "ESPECIALISTAS_SOS", autorizacion_sos: "SIEMPRE", orden: 30 },
-  { ...base, id: 6, codigo: "ORTOPEDIA", nombre: "Ortopedia (UPI osteomuscular)", duracion_min: 15, eps: "SOS", menu: "ESPECIALISTAS", edad_minima: 16, agenda: "ESPECIALISTAS_SOS", autorizacion_sos: "SIEMPRE", orden: 31 },
+  { ...base, id: 3, codigo: "VAL_FISIO_SOS", nombre: "Valoración de fisioterapia (OPS de terapia física integral)", duracion_min: 15, eps: "SOS", agenda: "FISIO_SOS", autorizacion_sos: "NO", orden: 10 },
+  { ...base, id: 5, codigo: "FISIATRIA", nombre: "Fisiatría", nombre_visoft: "Consulta de primera vez con Medicina Física y Rehabilitación", duracion_min: 15, eps: "SOS", menu: "ESPECIALISTAS", edad_minima: 16, agenda: "ESPECIALISTAS_SOS", autorizacion_sos: "CONDICIONAL", orden: 30 },
+  { ...base, id: 6, codigo: "ORTOPEDIA", nombre: "Ortopedia (UPI osteomuscular)", duracion_min: 15, eps: "SOS", menu: "ESPECIALISTAS", edad_minima: 16, agenda: "ESPECIALISTAS_SOS", autorizacion_sos: "CONDICIONAL", orden: 31 },
   { ...base, id: 9, codigo: "VAL_FONO", nombre: "Valoración de fonoaudiología", duracion_min: 15, eps: "TODAS", por_grupo_edad: true, autorizacion_salud_total: "SIEMPRE", autorizacion_sos: "SIEMPRE", orden: 40 },
   { ...base, id: 11, codigo: "VAL_RESPIRATORIA", nombre: "Valoración de terapia respiratoria", duracion_min: 30, eps: "TODAS", orden: 60 },
   { ...base, id: 12, codigo: "T_RESPIRATORIA", nombre: "Terapia respiratoria", duracion_min: 20, eps: "TODAS", orden: 70 },
-  { ...base, id: 13, codigo: "SIN_HORARIO", nombre: "Servicio sin horario", duracion_min: 15, eps: "TODAS", orden: 80 },
+  { ...base, id: 13, codigo: "VAL_SIN_HORARIO", nombre: "Valoración sin horario", duracion_min: 15, eps: "TODAS", orden: 80 },
 ];
 
 const f = (servicio_id: number, dias: number[], hora_inicio: string, hora_fin: string, grupo_edad: Franja["grupo_edad"] = "TODOS"): Franja[] =>

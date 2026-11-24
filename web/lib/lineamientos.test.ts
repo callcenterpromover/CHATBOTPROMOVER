@@ -29,14 +29,14 @@ describe("verificaciones", () => {
   const titulos = (v: ReturnType<typeof verificaciones>) => v.map((x) => x.titulo);
 
   it("SOS sin OPS: alerta, IPS y lineamientos de SOS", () => {
-    const v = verificaciones({ servicio: servicio("FISIATRIA"), eps: "SOS", edad: 40, autorizacionEstado: "NO_DETERMINADA", lineamientos: LIN, ips: IPS });
+    const v = verificaciones({ servicio: { ...servicio("FISIATRIA"), autorizacion_sos: "SIEMPRE" }, eps: "SOS", edad: 40, autorizacionEstado: "NO_DETERMINADA", lineamientos: LIN, ips: IPS });
     expect(v[0]).toMatchObject({ titulo: "Falta OPS", nivel: "alerta" });
     expect(titulos(v)).toEqual(["Falta OPS", "Datos de agendamiento", "Verificar la IPS del paciente", "Protección Laboral", "Vencimiento de la OPS"]);
     expect(v[1].texto).toContain("Consulta de primera vez con Medicina Física y Rehabilitación");
   });
 
   it("menor de 16 con especialista: alerta de redirección y datos del acudiente", () => {
-    const v = verificaciones({ servicio: servicio("ORTOPEDIA"), eps: "SOS", edad: 15, autorizacionEstado: "RECIBIDA", lineamientos: LIN, ips: IPS });
+    const v = verificaciones({ servicio: { ...servicio("ORTOPEDIA"), autorizacion_sos: "SIEMPRE" }, eps: "SOS", edad: 15, autorizacionEstado: "RECIBIDA", lineamientos: LIN, ips: IPS });
     expect(titulos(v)).toContain("Menor de 16 años");
     expect(titulos(v)).toContain("Datos del acudiente");
     expect(v[0]).toMatchObject({ titulo: "OPS recibida", nivel: "info" });
