@@ -59,7 +59,7 @@ export default async function PaginaAgendas({ searchParams }: PageProps<"/admin/
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Agendas</h1>
+        <h1 className="text-xl font-semibold tracking-[-0.01em] text-slate-900">{VISTAS.find((v) => v.id === vista)?.texto}</h1>
         <p className="mt-0.5 text-sm text-slate-500">
           Servicios, horarios de atención y lineamientos de agendamiento. El bot los usa para ofrecer franjas; nunca agenda ni
           confirma citas.
@@ -67,20 +67,6 @@ export default async function PaginaAgendas({ searchParams }: PageProps<"/admin/
       </div>
       <Notificaciones avisos={MENSAJES[clave] ? [MENSAJES[clave]] : []} />
 
-      <nav aria-label="Secciones de Agendas" className="-mx-4 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
-        {VISTAS.map((v) => (
-          <Link
-            key={v.id}
-            href={v.id === "servicios" ? "/admin/agendas" : `/admin/agendas?v=${v.id}`}
-            aria-current={vista === v.id ? "page" : undefined}
-            className={`-mb-px shrink-0 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap ${
-              vista === v.id ? "border-teal-700 text-teal-800" : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            {v.texto}
-          </Link>
-        ))}
-      </nav>
 
       {!catalogo ? (
         <p className="rounded-lg bg-rose-50 p-4 text-sm text-rose-800">No se pudo leer el catálogo de agendas.</p>

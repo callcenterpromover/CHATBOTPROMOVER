@@ -27,10 +27,11 @@ import { ModalTomar } from "./modal-tomar";
 type Pestana = "mia" | "bolsa" | "otros";
 
 const AVISOS: Record<string, Aviso> = {
-  tomada: { tono: "error", texto: "Otra persona tomó esa solicitud antes que tú. Elige otra de la bolsa." },
-  devuelta: { tono: "ok", texto: "La solicitud volvió a la bolsa general." },
+  tomada: { tono: "error", texto: "Otra persona tomó esa solicitud antes que tú. Elige otra de «Por tomar»." },
+  devuelta: { tono: "ok", texto: "La solicitud volvió a «Por tomar»." },
   asignada: { tono: "ok", texto: "Solicitud asignada." },
   error: { tono: "error", texto: "No se pudo completar la acción. Intenta de nuevo." },
+  no_encontrada: { tono: "error", texto: "No encontramos una solicitud con ese número, o no tienes acceso a ella." },
 };
 
 function uno(v: string | string[] | undefined) {
@@ -130,11 +131,14 @@ export default async function PaginaListaEspera({ searchParams }: PageProps<"/li
     ...(aviso ? [aviso] : []),
   ];
 
-  const pestanas: { id: Pestana; texto: string; total: number }[] = [
-    { id: "mia", texto: "Mi cola de trabajo", total: cuentas.mia },
-    { id: "bolsa", texto: "Bolsa general de espera", total: cuentas.bolsa },
-    ...(admin ? [{ id: "otros" as const, texto: "En gestión por otros", total: cuentas.otros }] : []),
+  const pestanas: { id: Pestana; texto: string; total: number; ayuda: string }[] = [
+    { id: "mia", texto: "Mi bandeja", total: cuentas.mia, ayuda: "Solicitudes que tomaste. Ábrelas, revísalas y gestiónalas." },
+    { id: "bolsa", texto: "Por tomar", total: cuentas.bolsa, ayuda: "Solicitudes sin asignar, de la más antigua a la más reciente. Toma una para empezar." },
+    ...(admin
+      ? [{ id: "otros" as const, texto: "En gestión por otros", total: cuentas.otros, ayuda: "Solicitudes que tiene otra persona del equipo. Puedes reasignarlas o liberarlas." }]
+      : []),
   ];
+  const pestanaActual = pestanas.find((p) => p.id === pestana) ?? pestanas[0];
 
   const filtrosActivos = [f.eps, f.cat, f.estado, f.doc, f.factor, f.alerta, f.vence, f.orden !== "espera"].filter(Boolean).length;
   const accionTitulo = pestana === "otros" ? "Asignada a" : pestana === "mia" ? "Acción" : admin ? "Asignar a" : "";
@@ -145,7 +149,7 @@ export default async function PaginaListaEspera({ searchParams }: PageProps<"/li
       {pestana === "mia" ? (
         <form action={devolverSolicitud.bind(null, s.id, volverA)}>
           <button type="submit" className="min-h-8 text-xs font-medium text-slate-600 hover:text-rose-700 hover:underline">
-            Devolver a la bolsa
+            Devolver a «Por tomar»
           </button>
         </form>
       ) : null}
@@ -203,32 +207,14 @@ export default async function PaginaListaEspera({ searchParams }: PageProps<"/li
     <div className="space-y-4">
       <Notificaciones avisos={avisos} />
 
-      <div
-        role="tablist"
-        aria-label="Colas"
-        className="-mx-4 flex gap-1 overflow-x-auto border-b border-slate-200 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0"
-      >
-        {pestanas.map((p) => {
-          const activa = p.id === pestana;
-          return (
-            <Link
-              key={p.id}
-              role="tab"
-              aria-selected={activa}
-              href={`/lista-espera?tab=${p.id}`}
-              className={`-mb-px flex shrink-0 items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                activa ? "border-teal-700 text-teal-800" : "border-transparent text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              {p.texto}
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs tabular-nums ${activa ? "bg-teal-50 text-teal-800" : "bg-slate-100 text-slate-600"}`}
-              >
-                {p.total}
-              </span>
-            </Link>
-          );
-        })}
+      {/* Las colas se eligen en la barra lateral (Trabajo); aquí solo se nombra la actual. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div>
+          <h1 className="text-xl font-semibold tracking-[-0.01em] text-slate-900">
+            {pestanaActual.texto} <span className="cifras ml-1 text-base font-normal text-slate-500">{pestanaActual.total}</span>
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500">{pestanaActual.ayuda}</p>
+        </div>
       </div>
 
       <form method="get" className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
@@ -318,7 +304,7 @@ export default async function PaginaListaEspera({ searchParams }: PageProps<"/li
           {hayFiltros
             ? "Ninguna solicitud coincide con estos filtros."
             : pestana === "mia"
-              ? "No tienes solicitudes asignadas. Toma una de la bolsa general."
+              ? "No tienes solicitudes asignadas. Toma una de «Por tomar»."
               : pestana === "bolsa"
                 ? "No hay solicitudes pendientes de asignación."
                 : "Nadie más tiene solicitudes en gestión."}

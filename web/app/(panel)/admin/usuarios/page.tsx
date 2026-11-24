@@ -9,7 +9,7 @@ const MENSAJES: Record<string, Aviso> = {
   creado: { tono: "ok", texto: "Usuario creado. Entrégale su contraseña temporal por un medio seguro." },
   rol: { tono: "ok", texto: "Rol actualizado." },
   activado: { tono: "ok", texto: "Usuario activado." },
-  desactivado: { tono: "ok", texto: "Usuario desactivado. Sus casos volvieron a la bolsa general." },
+  desactivado: { tono: "ok", texto: "Usuario desactivado. Sus casos volvieron a «Por tomar»." },
   datos: { tono: "error", texto: "Revisa el correo y el nombre (mínimo 3 caracteres)." },
   rol_error: { tono: "error", texto: "No tienes permiso para asignar o modificar ese rol." },
   clave: { tono: "error", texto: "La contraseña temporal debe tener entre 12 y 72 caracteres." },
@@ -183,7 +183,7 @@ export default async function PaginaUsuarios({ searchParams }: PageProps<"/admin
         </Tarjeta>
       </div>
       <p className="text-xs text-slate-500">
-        Desactivar una cuenta le quita el acceso de inmediato y devuelve sus casos a la bolsa general. Cada cambio queda
+        Desactivar una cuenta le quita el acceso de inmediato y devuelve sus casos a «Por tomar». Cada cambio queda
         en la auditoría.
       </p>
     </div>

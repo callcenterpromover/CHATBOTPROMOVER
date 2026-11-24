@@ -3,8 +3,8 @@ import { esAdmin, esRol, inicioPorRol, rolesGestionables } from "./roles";
 
 describe("roles", () => {
   it("redirige según el rol", () => {
-    expect(inicioPorRol("super_admin")).toBe("/dashboard");
-    expect(inicioPorRol("administrador")).toBe("/dashboard");
+    expect(inicioPorRol("super_admin")).toBe("/lista-espera");
+    expect(inicioPorRol("administrador")).toBe("/lista-espera");
     expect(inicioPorRol("operativo")).toBe("/lista-espera");
     expect(inicioPorRol(null)).toBe("/login");
   });

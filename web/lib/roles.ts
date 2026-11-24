@@ -20,7 +20,8 @@ export function esAdmin(rol: Rol | null | undefined) {
 /** Pantalla principal según el rol (redirección después del login y botón de la página 404). */
 export function inicioPorRol(rol: Rol | null | undefined) {
   if (!rol) return "/login";
-  return esAdmin(rol) ? "/dashboard" : "/lista-espera";
+  // Los administradores también gestionan solicitudes la mayor parte del tiempo (PRODUCT.md).
+  return "/lista-espera";
 }
 
 /** Roles que un usuario puede asignar al gestionar usuarios. */

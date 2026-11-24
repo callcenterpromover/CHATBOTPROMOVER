@@ -5,10 +5,74 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Mundo visual del panel (docs/superpowers/specs/2026-11-24-rediseno-interfaz.md):
+   lateral en tinta verde azulada, contenido claro y frío, un solo acento. */
+@theme {
+  --color-tinta-950: #071a1a;
+  --color-tinta-900: #0d2b2b;
+  --color-tinta-800: #143a3a;
+  --color-tinta-700: #1d4a49;
+  --color-tinta-300: #9cc3bf;
+  --color-tinta-200: #c5ddda;
+  --color-lienzo: #f3f5f6;
+  --ease-salida: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 body {
-  background: #f8fafc;
+  background: var(--color-lienzo);
   color: #0f172a;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Números de conteos, códigos y fechas: alineados en columna. */
+.cifras {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Barras de desplazamiento con la paleta del panel. */
+* {
+  scrollbar-color: rgb(148 163 184 / 0.6) transparent;
+  scrollbar-width: thin;
+}
+.lateral * {
+  scrollbar-color: rgb(156 195 191 / 0.35) transparent;
+}
+
+/* Menús emergentes: crecen desde su disparador. Sin animación si el usuario prefiere menos movimiento. */
+.emergente {
+  transform-origin: top right;
+  transition:
+    opacity 150ms var(--ease-salida),
+    transform 150ms var(--ease-salida);
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.97) translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .emergente {
+    transition: none;
+  }
+}
+
+/* Cajón de navegación en celular. */
+.cajon {
+  transition: transform 220ms var(--ease-salida);
+  @starting-style {
+    transform: translateX(-100%);
+  }
+}
+.velo {
+  transition: opacity 220ms ease;
+  @starting-style {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cajon,
+  .velo {
+    transition: none;
+  }
 }
 
 /* Superficies del navegador con la paleta del panel. */

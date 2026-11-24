@@ -66,6 +66,13 @@ export async function guardarGestion(id: string, formData: FormData) {
     cambios.documento = d || null;
   }
 
+  const asistencia = formData.get("ultima_asistencia");
+  if (asistencia !== null) {
+    const v = String(asistencia);
+    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) volver(id, "error=dato");
+    cambios.ultima_asistencia = v || null;
+  }
+
   const cita = formData.get("cita_previa_fecha");
   if (cita !== null) {
     const c = String(cita);
@@ -78,7 +85,7 @@ export async function guardarGestion(id: string, formData: FormData) {
   if (error) volver(id, "error=guardar");
   if (!filas?.length) volver(id, "error=permiso");
   revalidatePath("/lista-espera");
-  volver(id, "ok=guardado");
+  volver(id, formData.get("revision_humana") === "COMPLETADA" ? "ok=revisado" : "ok=guardado");
 }
 
 export async function corregirCampo(id: string, campoId: number, formData: FormData) {
@@ -142,6 +149,12 @@ export async function cerrarSolicitud(id: string, formData: FormData) {
   const supabase = await contexto(id);
   const motivo = String(formData.get("motivo") ?? "");
   if (!(MOTIVOS_CIERRE as readonly string[]).includes(motivo)) volver(id, "error=dato");
+
+  // «Gestionada» exige que la solicitud se haya marcado como revisada (botón «Revisado»).
+  if (motivo === "GESTIONADA") {
+    const { data: rev } = await supabase.from("solicitudes").select("revision_humana").eq("id", id).maybeSingle();
+    if (rev?.revision_humana !== "COMPLETADA") volver(id, "error=sin_revisar");
+  }
 
   const { data, error } = await supabase.rpc("cerrar_solicitud", { p_id: id, p_motivo: motivo });
   if (error || !data?.eliminada) {

@@ -6,7 +6,7 @@ export default async function NoEncontrado() {
   // Sin redirigir: si hay sesión, el botón lleva a la pantalla principal del rol.
   const { operador } = await obtenerSesion();
   const destino = inicioPorRol(operador?.rol);
-  const texto = !operador ? "Ir al inicio de sesión" : destino === "/dashboard" ? "Volver al dashboard" : "Volver a la lista de espera";
+  const texto = !operador ? "Ir al inicio de sesión" : "Volver a la lista de espera";
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4">

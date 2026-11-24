@@ -193,7 +193,7 @@ export default async function PaginaDashboard() {
     <div className="space-y-5">
       <AutoRefresco segundos={20} />
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
+        <h1 className="text-xl font-semibold tracking-[-0.01em] text-slate-900">Indicadores</h1>
         <p className="mt-0.5 text-sm text-slate-500">
           Indicadores de la sede Cali.{!admin ? " Vista de solo lectura." : ""} Históricos de los últimos
           30 días, sin datos de pacientes.
