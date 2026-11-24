@@ -10,8 +10,12 @@ const media = (id: string): Entrada => ({ tipo: "media", mediaId: id });
 const ctx = (solicitud: Contexto["solicitud"] = null): Contexto => ({ ahora: AHORA, solicitud });
 
 /** Ejecuta una conversación completa y acumula acciones y respuestas. */
+// El flujo paso a paso (consentimiento, documento, nombre…) sigue vivo para las conversaciones que ya iban
+// por la mitad cuando llegó el flujo corto: estas pruebas arrancan en ese punto.
+const EN_CONSENTIMIENTO: Estado = { paso: "CONSENTIMIENTO", datos: { inicio: AHORA } };
+
 function conversar(entradas: Entrada[], solicitud: Contexto["solicitud"] = null, catalogo: Catalogo | null = null) {
-  let estado: Estado = ESTADO_INICIAL;
+  let estado: Estado = EN_CONSENTIMIENTO;
   const acciones: Accion[] = [];
   const respuestas: string[] = [];
   let sol = solicitud;
@@ -74,10 +78,12 @@ describe("flujo completo", () => {
 });
 
 describe("autorización de datos", () => {
-  it("el primer mensaje da la bienvenida y pide autorización", () => {
+  it("el primer mensaje es un saludo único que pide todo y avisa el tratamiento de datos", () => {
     const r = procesar(ESTADO_INICIAL, texto("hola"), ctx());
-    expect(r.respuestas).toEqual([M.bienvenida, M.consentimiento]);
-    expect(r.estado.paso).toBe("CONSENTIMIENTO");
+    expect(r.respuestas).toEqual([M.saludo]);
+    expect(M.saludo).toContain("PROMOVER Cali");
+    expect(M.saludo).toContain("Ley 1581");
+    expect(r.estado.paso).toBe("RECOLECTANDO");
     expect(r.acciones).toEqual([]);
   });
 
@@ -222,10 +228,11 @@ describe("mensajes especiales", () => {
     expect(r.acciones).toEqual([expect.objectContaining({ codigo: "PACIENTE_DESISTE" })]);
   });
 
-  it("NUEVA después del registro abre otra solicitud y pide autorización", () => {
+  it("NUEVA después del registro abre otra solicitud con el saludo único", () => {
     const r = procesar({ paso: "FINAL", datos: { canal: "simulador" } }, texto("Nueva"), ctx());
     expect(r.acciones).toEqual([{ tipo: "nuevaSolicitud" }]);
-    expect(r.estado).toEqual({ paso: "CONSENTIMIENTO", datos: { inicio: AHORA, canal: "simulador" } });
+    expect(r.estado).toEqual({ paso: "RECOLECTANDO", datos: { inicio: AHORA, canal: "simulador" } });
+    expect(r.respuestas).toEqual([M.saludo]);
   });
 
   it("adulto mayor se agrega por la edad declarada", () => {
@@ -369,5 +376,88 @@ describe("servicios y horarios del panel Agendas", () => {
     const r = conCatalogo([...hastaEps, texto("1"), texto("44"), texto("2"), texto("la otra semana")]);
     expect(r.estado.paso).toBe("ULTIMA_ASISTENCIA");
     expect(r.respuestas.at(-1)).toBe(M.ultimaAsistenciaInvalida);
+  });
+});
+
+describe("flujo corto: un saludo y el paciente envía todo", () => {
+  const recolectando = (minutos = 0, extra: Partial<Estado["datos"]> = {}): Estado => ({
+    paso: "RECOLECTANDO",
+    datos: { inicio: new Date(new Date(AHORA).getTime() - minutos * 60_000).toISOString(), ...extra },
+  });
+
+  it("el primer mensaje después del saludo crea la solicitud; datos y documentos se recogen en silencio", () => {
+    const r = procesar(recolectando(), texto("Mi cédula es 1.000.000.020 y me llamo Laura Prueba Veinte"), ctx());
+    expect(r.acciones).toEqual([
+      { tipo: "crearSolicitud" },
+      { tipo: "actualizar", campos: { documento: "1000000020", nombre: "Laura Prueba Veinte" } },
+    ]);
+    expect(r.respuestas).toEqual([]);
+    const doc = procesar({ ...r.estado }, media("m1"), ctx({ documento: "1000000020", nombre: "Laura Prueba Veinte" }));
+    expect(doc.acciones).toEqual([{ tipo: "encolar", mediaId: "m1", tipoDocumento: "DESCONOCIDO" }]);
+    expect(doc.respuestas).toEqual([]);
+  });
+
+  it("antes de media hora no responde aunque falte algo", () => {
+    const r = procesar(recolectando(10, { solicitudCreada: true }), texto("hola?"), ctx());
+    expect(r.respuestas).toEqual([]);
+  });
+
+  it("después de media hora le dice qué falta, una vez cada media hora", () => {
+    const docs = [{ tipo_documento: "ORDEN", estado: "COMPLETADO" }];
+    const r = procesar(recolectando(40, { solicitudCreada: true }), texto("hola?"), { ...ctx({ documento: "1000000020" }), documentos: docs });
+    expect(r.respuestas).toEqual([M.faltan("el nombre completo y la historia clínica")]);
+    const otra = procesar(r.estado, texto("??"), { ...ctx({ documento: "1000000020" }), documentos: docs });
+    expect(otra.respuestas).toEqual([]);
+  });
+
+  it("si todo llegó, lo confirma y termina", () => {
+    const docs = [{ tipo_documento: "ORDEN", estado: "COMPLETADO" }, { tipo_documento: "HISTORIA", estado: "COMPLETADO" }];
+    const r = procesar(recolectando(5, { solicitudCreada: true }), texto("listo"), { ...ctx({ documento: "1", nombre: "Ana Prueba" }), documentos: docs });
+    expect(r.estado.paso).toBe("FINAL");
+    expect(r.respuestas).toEqual([M.recibidoTodo]);
+  });
+
+  it("continuidad: el plan de tratamiento basta", () => {
+    const docs = [{ tipo_documento: "PLAN", estado: "COMPLETADO" }];
+    const r = procesar(recolectando(5, { solicitudCreada: true }), texto("ya"), { ...ctx({ documento: "1", nombre: "Ana Prueba" }), documentos: docs });
+    expect(r.respuestas).toEqual([M.recibidoTodo]);
+  });
+
+  it("si un documento no se pudo identificar, no inventa lo que falta: lo revisa el equipo", () => {
+    const docs = [{ tipo_documento: "DESCONOCIDO", estado: "COMPLETADO" }];
+    const r = procesar(recolectando(45, { solicitudCreada: true }), texto("hola"), { ...ctx({ documento: "1", nombre: "Ana Prueba" }), documentos: docs });
+    expect(r.respuestas).toEqual([M.enRevision]);
+  });
+
+  const hace = (min: number) => new Date(new Date(AHORA).getTime() - min * 60_000).toISOString();
+
+  it("mientras el paciente sigue enviando cosas no lo interrumpe, aunque haya pasado media hora", () => {
+    const r = procesar(recolectando(50, { solicitudCreada: true, ultimaEntrada: hace(2) }), texto("aquí va otra foto"), ctx());
+    expect(r.respuestas).toEqual([]);
+  });
+
+  it("si deja de escribir media hora y vuelve, le dice lo que falta", () => {
+    const r = procesar(recolectando(90, { solicitudCreada: true, ultimaEntrada: hace(45) }), texto("buenas"), ctx({ documento: "1" }));
+    expect(r.respuestas).toEqual([M.faltan("el nombre completo, la orden médica y la historia clínica (o, si ya estás en terapias, solo el plan de tratamiento)")]);
+  });
+
+  it("si pregunta por su proceso pasada la media hora del saludo, responde aunque haya escrito hace poco", () => {
+    const r = procesar(recolectando(40, { solicitudCreada: true, ultimaEntrada: hace(1) }), texto("¿qué me falta?"), ctx({ documento: "1", nombre: "Ana Prueba" }));
+    expect(r.respuestas).toEqual([M.faltan("la orden médica y la historia clínica (o, si ya estás en terapias, solo el plan de tratamiento)")]);
+  });
+
+  it("terminada la solicitud, no responde a un «gracias» ni a documentos extra; si vuelve después, le da el estado", () => {
+    const final = (extra: Partial<Estado["datos"]>): Estado => ({ paso: "FINAL", datos: { inicio: hace(120), solicitudCreada: true, completa: true, ...extra } });
+    expect(procesar(final({ recordado: hace(1), ultimaEntrada: hace(1) }), texto("gracias"), ctx()).respuestas).toEqual([]);
+    const doc = procesar(final({ recordado: hace(1), ultimaEntrada: hace(1) }), media("m9"), ctx());
+    expect(doc.respuestas).toEqual([]);
+    expect(doc.acciones).toEqual([{ tipo: "encolar", mediaId: "m9", tipoDocumento: "DESCONOCIDO" }]);
+    expect(procesar(final({ recordado: hace(60), ultimaEntrada: hace(60) }), texto("hola, cómo va mi cita"), ctx()).respuestas).toEqual([M.solicitudCompleta]);
+  });
+
+  it("urgencias y cancelar siguen funcionando", () => {
+    expect(procesar(recolectando(1, { solicitudCreada: true }), texto("es urgente"), ctx()).respuestas).toEqual([M.urgencia]);
+    const c = procesar(recolectando(1, { solicitudCreada: true }), texto("cancelar"), ctx());
+    expect(c.estado.paso).toBe("FINAL");
   });
 });

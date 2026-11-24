@@ -7,6 +7,7 @@ import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { enviar } from "./canal";
 import { botActivo } from "./estado";
 import { M } from "./mensajes";
+import { estadoRecoleccion, type DocumentoRecibido } from "./recoleccion";
 import { ESTADO_INICIAL, procesar, type Accion, type Canal, type Datos, type Entrada, type Estado, type Paso } from "./motor";
 
 const MAX_DOCUMENTOS_POR_SOLICITUD = 30;
@@ -110,7 +111,10 @@ export async function manejarEntrada(telefono: string, entrada: Entrada, canal: 
   const estado: Estado = conv ? { paso: conv.paso, datos: conv.datos ?? {} } : ESTADO_INICIAL;
 
   let solicitud = null;
+  let documentos: DocumentoRecibido[] = [];
   if (conv?.solicitud_id) {
+    const { data: docs } = await db.from("trabajos_ocr").select("tipo_documento, estado").eq("solicitud_id", conv.solicitud_id);
+    documentos = (docs ?? []) as DocumentoRecibido[];
     const { data } = await db
       .from("solicitudes")
       .select("documento, nombre, eps, eps_texto, servicio_texto, servicio_cita_id, edad, historia_estado")
@@ -121,7 +125,7 @@ export async function manejarEntrada(telefono: string, entrada: Entrada, canal: 
 
   // Sin catálogo (error de lectura) el bot sigue funcionando con servicio y horario en texto libre.
   const catalogo = await cargarCatalogo(db);
-  const r = procesar(estado, entrada, { ahora: new Date().toISOString(), solicitud, catalogo });
+  const r = procesar(estado, entrada, { ahora: new Date().toISOString(), solicitud, catalogo, documentos });
   const datos: Datos = { ...r.estado.datos, canal };
 
   const solicitudId = await aplicar(db, r.acciones, conv?.solicitud_id ?? null, telefono, datos);
@@ -169,9 +173,20 @@ export async function avisarDocumentoProcesado(trabajoId: number) {
   if (!conv) return "sin_conversacion";
 
   let texto: string | null = null;
-  if (trabajo.estado === "REENVIO_REQUERIDO") {
+  // Flujo corto: si con este documento ya llegó todo, se le avisa al paciente y la conversación termina.
+  if (conv.paso === "RECOLECTANDO" && trabajo.estado !== "REENVIO_REQUERIDO") {
+    const [{ data: s }, { data: docs }] = await Promise.all([
+      db.from("solicitudes").select("documento, nombre").eq("id", trabajo.solicitud_id).maybeSingle(),
+      db.from("trabajos_ocr").select("tipo_documento, estado").eq("solicitud_id", trabajo.solicitud_id),
+    ]);
+    if (estadoRecoleccion(s ?? {}, (docs ?? []) as DocumentoRecibido[]).tipo === "COMPLETA") {
+      texto = M.recibidoTodo;
+      await db.from("conversaciones").update({ paso: "FINAL", datos: { ...(conv.datos ?? {}), completa: true, recordado: new Date().toISOString() }, actualizado_en: new Date().toISOString() }).eq("solicitud_id", trabajo.solicitud_id);
+    }
+  }
+  if (!texto && trabajo.estado === "REENVIO_REQUERIDO") {
     texto = trabajo.error_codigo ? M.reenvioNoProcesable : M.reenvioIlegible;
-  } else if (trabajo.tipo_documento === "HISTORIA" && conv.paso !== "HISTORIA") {
+  } else if (!texto && trabajo.tipo_documento === "HISTORIA" && conv.paso !== "HISTORIA" && conv.paso !== "RECOLECTANDO") {
     // Mientras el paciente sigue enviando páginas no se interrumpe; al escribir LISTO el bot ya avisa.
     const { data: s } = await db.from("solicitudes").select("historia_estado").eq("id", trabajo.solicitud_id).maybeSingle();
     if (s?.historia_estado === "POSIBLEMENTE_INCOMPLETA") texto = M.historiaIncompleta;

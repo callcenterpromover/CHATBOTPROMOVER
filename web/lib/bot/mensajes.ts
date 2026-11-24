@@ -3,6 +3,31 @@
 // antes de usarse con pacientes reales: no se reescriben sin esa aprobación.
 
 export const M = {
+  // --- Flujo corto (2026-11-24): un solo saludo pide todo. ---
+  // PRELIMINAR: la aceptación por continuar la conversación (Ley 1581 de 2012) requiere aprobación jurídica.
+  saludo:
+    "Hola, te comunicas con PROMOVER Cali. 👋\n" +
+    "Para registrar tu solicitud de cita, envíanos por aquí:\n" +
+    "• Número de cédula del paciente\n" +
+    "• Nombre completo\n" +
+    "• Foto o PDF de la orden médica\n" +
+    "• Historia clínica completa\n" +
+    "Si ya estás en terapias, envía el plan de tratamiento en lugar de la orden y la historia.\n\n" +
+    "Al continuar esta conversación aceptas el tratamiento de tus datos personales y de salud según la Ley 1581 de 2012. " +
+    "Por este chat no se confirman citas: el equipo revisa tu solicitud y te contacta.",
+  faltan: (lista: string) => `Todavía nos falta ${lista}. Envíalo por aquí para completar tu solicitud.`,
+  leyendo: "Estamos revisando los documentos que enviaste. Si falta algo, te escribimos.",
+  enRevision:
+    "Recibimos tus documentos y el equipo los está revisando. Si falta algo, te escribimos.",
+  enRevisionConDatos: (lista: string) =>
+    `Recibimos tus documentos y el equipo los está revisando. Mientras tanto, envíanos ${lista}.`,
+  recibidoTodo:
+    "Recibimos tus datos y documentos. El equipo de PROMOVER los revisa y te contacta para asignar la cita. " +
+    "Por este chat la cita no queda confirmada.",
+  solicitudCompleta:
+    "Tu solicitud está completa y el equipo la está revisando. Te contactamos para asignar la cita. " +
+    "Si necesitas una solicitud distinta (otra orden), escribe *NUEVA*.",
+
   bienvenida:
     "Hola, te escribe el equipo de PROMOVER S.A.S. 👋\n" +
     "Por aquí recibimos las solicitudes de cita. Revisamos cada una y te contactamos para asignarla, así que la cita no queda confirmada en este chat.\n" +

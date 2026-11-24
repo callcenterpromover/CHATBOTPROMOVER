@@ -8,6 +8,7 @@
 import { franjasPara, opcionesPaciente, serviciosPara, type Catalogo, type ServicioCita } from "../horarios";
 import { claseServicio, diasDesde, DIAS_MAX_INASISTENCIA, interpretarUltimaAsistencia, requiereHistoria, requiereOps } from "./flujo";
 import { M } from "./mensajes";
+import { MINUTOS_ESPERA, enumerar, esPreguntaDeEstado, estadoRecoleccion, extraerDocumento, extraerNombre, minutosDesde, type DocumentoRecibido } from "./recoleccion";
 
 export type Canal = "whatsapp" | "simulador";
 
@@ -38,6 +39,7 @@ export type Paso =
   | "PLAN"
   | "PREFERENCIA"
   | "FACTORES"
+  | "RECOLECTANDO" // flujo corto: el paciente envía todo de una vez
   | "FINAL";
 
 export type Datos = {
@@ -48,6 +50,10 @@ export type Datos = {
   opciones?: number[]; // IDs de servicio del último menú mostrado (0 = "Especialistas")
   franjas?: string[]; // franjas ofrecidas en la pregunta de preferencia
   planRecibido?: boolean; // el paciente envió el plan antes de que se lo pidiéramos
+  solicitudCreada?: boolean; // flujo corto: la solicitud se crea con el primer mensaje después del saludo
+  recordado?: string; // flujo corto: último aviso de lo que falta
+  ultimaEntrada?: string; // flujo corto: último mensaje del paciente (30 min de silencio = conversación terminada)
+  completa?: boolean; // flujo corto: llegó todo
 };
 
 const OPCION_ESPECIALISTAS = 0;
@@ -93,7 +99,8 @@ export type SolicitudContexto = {
 } | null;
 
 /** `catalogo` viene del panel Agendas; sin él (o sin servicios) el bot pide servicio y horario en texto libre. */
-export type Contexto = { ahora: string; solicitud: SolicitudContexto; catalogo?: Catalogo | null };
+/** `documentos`: lo que ya se recibió para la solicitud (flujo corto). */
+export type Contexto = { ahora: string; solicitud: SolicitudContexto; catalogo?: Catalogo | null; documentos?: DocumentoRecibido[] };
 
 export type Resultado = { estado: Estado; respuestas: string[]; acciones: Accion[] };
 
@@ -155,6 +162,8 @@ function pregunta(paso: Paso, datos: Datos): string {
       return M.preferencia;
     case "FACTORES":
       return M.factores;
+    case "RECOLECTANDO":
+      return M.saludo;
     case "FINAL":
       return M.yaRegistrada;
   }
@@ -281,11 +290,102 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
   const fin = (): Resultado => ({ estado: { paso, datos }, respuestas, acciones });
 
   // --- Primer mensaje ------------------------------------------------------------------
+  // Flujo corto (2026-11-24): un solo saludo pide todo; lo que el paciente envíe después se recoge en silencio.
   if (paso === "INICIO") {
     datos = { inicio: ctx.ahora };
-    respuestas.push(M.bienvenida);
+    respuestas.push(M.saludo);
     if (entrada.tipo === "texto" && /urgen|emergencia/.test(normalizar(entrada.texto))) respuestas.push(M.urgencia);
-    ir("CONSENTIMIENTO");
+    paso = "RECOLECTANDO";
+    return fin();
+  }
+  // Flujo corto: el bot no escribe por iniciativa propia. Si el paciente deja de escribir media hora,
+  // la conversación queda terminada; si vuelve a escribir (o pregunta por su proceso pasada la media
+  // hora del saludo), se le responde una sola vez con lo que falta.
+  const silencio = minutosDesde(datos.ultimaEntrada ?? datos.inicio, ctx.ahora);
+  const tocaResponder = (texto: string | null) =>
+    minutosDesde(datos.recordado, ctx.ahora) >= MINUTOS_ESPERA &&
+    (silencio >= MINUTOS_ESPERA ||
+      (texto !== null && esPreguntaDeEstado(texto) && minutosDesde(datos.inicio, ctx.ahora) >= MINUTOS_ESPERA));
+
+  if (paso === "FINAL" && datos.completa) {
+    const texto = entrada.tipo === "texto" ? entrada.texto : null;
+    const t = texto ? normalizar(texto) : "";
+    const responder = tocaResponder(texto);
+    datos.ultimaEntrada = ctx.ahora;
+    if (entrada.tipo === "media") {
+      acciones.push({ tipo: "encolar", mediaId: entrada.mediaId, tipoDocumento: "DESCONOCIDO" });
+      return fin(); // queda en la solicitud, sin respuesta
+    }
+    if (/urgen|emergencia/.test(t)) {
+      acciones.push({ tipo: "alerta", codigo: "POSIBLE_URGENCIA", detalle: "El paciente mencionó una urgencia o emergencia. El bot le indicó acudir a urgencias o llamar al 123. Contactarlo según el protocolo institucional." });
+      respuestas.push(M.urgencia);
+      return fin();
+    }
+    if (t === "nueva" || t === "nueva solicitud") {
+      acciones.push({ tipo: "nuevaSolicitud" });
+      datos = { inicio: ctx.ahora, canal: datos.canal };
+      paso = "RECOLECTANDO";
+      respuestas.push(M.saludo);
+      return fin();
+    }
+    if (responder) {
+      datos.recordado = ctx.ahora;
+      respuestas.push(M.solicitudCompleta);
+    }
+    return fin();
+  }
+
+  if (paso === "RECOLECTANDO") {
+    const texto = entrada.tipo === "texto" ? entrada.texto : null;
+    const responder = tocaResponder(texto);
+    datos.ultimaEntrada = ctx.ahora;
+    // Continuar la conversación después del saludo es la aceptación (texto PRELIMINAR).
+    if (!datos.solicitudCreada && entrada.tipo !== "otro") {
+      acciones.push({ tipo: "crearSolicitud" });
+      datos.solicitudCreada = true;
+    }
+    if (entrada.tipo === "media") {
+      acciones.push({ tipo: "encolar", mediaId: entrada.mediaId, tipoDocumento: "DESCONOCIDO" });
+      return fin(); // en silencio: el bot responde cuando todo llegó o después de la espera
+    }
+    if (entrada.tipo === "texto") {
+      const t = normalizar(entrada.texto);
+      if (/urgen|emergencia/.test(t)) {
+        acciones.push({ tipo: "alerta", codigo: "POSIBLE_URGENCIA", detalle: "El paciente mencionó una urgencia o emergencia. El bot le indicó acudir a urgencias o llamar al 123. Contactarlo según el protocolo institucional." });
+        respuestas.push(M.urgencia);
+        return fin();
+      }
+      if (/^(cancelar|ya no|no quiero continuar|desisto)$/.test(t)) {
+        acciones.push({ tipo: "alerta", codigo: "PACIENTE_DESISTE", detalle: "El paciente escribió que no desea continuar. Confirmar y cerrar la solicitud con el motivo «El paciente desistió»." });
+        paso = "FINAL";
+        respuestas.push(M.cancelada);
+        return fin();
+      }
+      const doc = sol.documento ? null : extraerDocumento(entrada.texto);
+      const nombre = sol.nombre ? null : extraerNombre(entrada.texto);
+      if (doc || nombre) act({ ...(doc ? { documento: doc } : {}), ...(nombre ? { nombre } : {}) });
+    } else {
+      respuestas.push(entrada.tipo === "audio" ? M.audio : M.noSoportado);
+      return fin();
+    }
+    const estado = estadoRecoleccion(sol, ctx.documentos ?? []);
+    if (estado.tipo === "COMPLETA") {
+      paso = "FINAL";
+      datos.completa = true;
+      datos.recordado = ctx.ahora; // un «gracias» enseguida no recibe otra respuesta
+      respuestas.push(M.recibidoTodo);
+      return fin();
+    }
+    if (responder) {
+      datos.recordado = ctx.ahora;
+      respuestas.push(
+        estado.tipo === "LEYENDO"
+          ? M.leyendo
+          : estado.tipo === "EN_REVISION"
+            ? estado.faltanDatos.length ? M.enRevisionConDatos(enumerar(estado.faltanDatos)) : M.enRevision
+            : M.faltan(enumerar(estado.faltan)),
+      );
+    }
     return fin();
   }
 
@@ -630,7 +730,8 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
       if (t === "nueva" || t === "nueva solicitud") {
         acciones.push({ tipo: "nuevaSolicitud" });
         datos = { inicio: ctx.ahora, canal: datos.canal };
-        ir("CONSENTIMIENTO");
+        paso = "RECOLECTANDO";
+        respuestas.push(M.saludo);
       } else {
         respuestas.push(M.yaRegistrada);
       }
