@@ -24,11 +24,23 @@ NOMBRES_CATEGORIA = {
 ESPECIALISTAS = {"FISIATRIA", "ORTOPEDIA"}
 
 # Textos que no definen una ruta por sí solos (RB-010, RB-021).
+# PROMOVER (2026-11): con «consulta de ingreso modelo fisioterapia y rehabilitación», equipo
+# interdisciplinario, UPI osteomuscular o fisiatría hay que revisar la historia clínica (sección
+# de análisis y manejo) para saber cómo sigue el proceso del paciente.
 _GENERICAS = (
     r"PRIMERA VEZ POR EQUIPO INTERDISCIPLINARIO"
     r"|PRIMERA VEZ POR FISIOTERAPIA Y REHABILITACION"
+    r"|FISIOTERAPIA Y REHABILITACION"
     r"|FISIATRIA Y REHABILITACION"
+    r"|UPI OSTEOMUSCULAR|FISIATRIA|MEDICINA FISICA"
 )
+# «Fisioterapia (respiratoria)», «consulta por fisioterapia (ocupacional)»: manda el paréntesis.
+_PARENTESIS = [
+    (r"\(\s*RESPIRATORIA", "TERAPIA_RESPIRATORIA", "terapia respiratoria"),
+    (r"\(\s*OCUPACIONAL", "TERAPIA_OCUPACIONAL", "terapia ocupacional"),
+    (r"\(\s*(?:FONO|LENGUAJE)", "FONOAUDIOLOGIA", "fonoaudiología"),
+    (r"\(\s*(?:TERAPIA )?FISICA", "FISIOTERAPIA", "terapia física"),
+]
 _FUERA_DE_ALCANCE = r"URGENCIA|RADIOGRAFIA|RAYOS X|LABORATORIO|RESONANCIA|ECOGRAFIA|TOMOGRAFIA|EXAMEN"
 
 
@@ -42,14 +54,17 @@ def clasificar_servicio(servicio: str | None) -> tuple[str, str, str, bool]:
     if re.search(_FUERA_DE_ALCANCE, t):
         return "FUERA_DE_ALCANCE", "El servicio parece urgencias o examen diagnóstico (RB-060).", "MEDIA", False
     if re.search(r"UPI OSTEOMUSCULAR", t):
-        return "ORTOPEDIA", "UPI osteomuscular se interpreta como Ortopedia (RB-012).", "ALTA", False
+        return "ORTOPEDIA", "UPI osteomuscular se interpreta como Ortopedia (RB-012); revisar la historia.", "MEDIA", True
     if re.search(r"ORTOPEDIA", t):
         return "ORTOPEDIA", "El servicio menciona Ortopedia (RB-013).", "ALTA", False
     if re.search(r"INFILTRACION", t):
         return "INFILTRACIONES", "El servicio menciona infiltración.", "ALTA", False
     if re.search(r"TERAPIA OCUPACIONAL", t):
         return "TERAPIA_OCUPACIONAL", "El servicio menciona Terapia ocupacional (RB-017).", "ALTA", False
-    if re.search(r"FONOAUDIOLOGIA|TERAPIA DEL? LENGUAJE", t):
+    for patron, cat, nombre in _PARENTESIS:
+        if re.search(rf"FISIOTERAPIA[^(\n]{{0,40}}{patron}", t):
+            return cat, f"«Fisioterapia ({nombre})»: manda lo indicado entre paréntesis.", "ALTA", False
+    if re.search(r"FONOAUDIOLOG|TERAPIA DEL? LENGUAJE", t):
         return "FONOAUDIOLOGIA", "El servicio menciona Fonoaudiología (RB-018).", "ALTA", False
     if re.search(r"MAXILOFACIAL", t):
         return "FONOAUDIOLOGIA", "Maxilofacial se orienta a Fonoaudiología (RB-020, regla preliminar).", "MEDIA", False
@@ -60,7 +75,7 @@ def clasificar_servicio(servicio: str | None) -> tuple[str, str, str, bool]:
     if re.search(r"FISIATRIA|MEDICINA FISICA", t):
         if generica:
             return "FISIATRIA", "Texto genérico «Fisiatría y rehabilitación»; verificar con la historia (RB-021).", "BAJA", True
-        return "FISIATRIA", "El servicio menciona Fisiatría (RB-014).", "ALTA", False
+        return "FISIATRIA", "El servicio menciona Fisiatría (RB-014); revisar la historia.", "MEDIA", True
     if re.search(r"TERAPIAS? FISICAS?", t):
         return "FISIOTERAPIA", "El servicio menciona terapia física (RB-019).", "ALTA", False
     if re.search(r"FISIOTERAPIA", t):
@@ -219,7 +234,9 @@ def evaluar(
                 cambios["historia_estado"] = "RECIBIDA_PENDIENTE_REVISION"
     elif tipo == "PLAN":
         cambios["plan_estado"] = "RECIBIDO"
-    elif tipo == "AUTORIZACION":
+    # El direccionamiento de Salud Total se maneja como orden (decisión de PROMOVER, calibración
+    # 2026-11), pero trae el campo «N.º ORDEN DE DIRECCIONAMIENTO» que dice si ya se usó (RB-062).
+    if tipo == "AUTORIZACION" or ex.direccionamiento_con_valor is not None:
         if ex.direccionamiento_con_valor:
             cambios["autorizacion_estado"] = "POSIBLEMENTE_UTILIZADA"
             alertas.append(_alerta(

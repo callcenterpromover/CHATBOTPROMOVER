@@ -21,6 +21,7 @@ Image.MAX_IMAGE_PIXELS = 60_000_000
 warnings.simplefilter("error", Image.DecompressionBombWarning)
 TIEMPO_MAX_OCR = 120  # segundos por llamada a Tesseract
 LADO_MAX_PDF_PX = 4000  # lado máximo al convertir una página de PDF en imagen
+LADO_MAX_IMAGEN_PX = 4200  # tope al ampliar capturas pequeñas
 
 
 @dataclass
@@ -32,11 +33,12 @@ class Pagina:
 
     @property
     def legibilidad(self) -> str:
-        # Umbrales iniciales, calibrados solo con documentos ficticios: deben ajustarse con
-        # fotos reales anonimizadas antes del piloto (documento 06 §9).
-        if self.palabras < 8 or self.confianza < 55:
+        # Calibrados con 199 documentos reales etiquetados (calibracion/, ronda 2, 2026-11): con
+        # 50/65 ningún documento que una persona lee sin esfuerzo queda como ILEGIBLE (lo que
+        # haría pedir el reenvío al paciente). Antes (55/72) eran 7 de 128.
+        if self.palabras < 8 or self.confianza < 50:
             return "ILEGIBLE"
-        if self.confianza < 72 or self.nitidez < 12:
+        if self.confianza < 65 or self.nitidez < 12:
             return "POSIBLEMENTE_ILEGIBLE"
         return "LEGIBLE"
 
@@ -45,7 +47,14 @@ def _preparar(img: Image.Image) -> Image.Image:
     img = ImageOps.exif_transpose(img).convert("L")
     ancho, alto = img.size
     lado = max(ancho, alto)
-    if lado < 1600:  # fotos pequeñas: ampliar mejora la lectura
+    corto = min(ancho, alto)
+    if corto < 1400:
+        # Capturas de pantalla de un PDF (p. ej. 720 x 1612): la página entera cabe en el ancho del
+        # celular y la letra queda de 4-5 px. Se amplía según el lado corto (calibración 2026-11).
+        f = min(1800 / corto, LADO_MAX_IMAGEN_PX / lado)
+        if f > 1:
+            img = img.resize((round(ancho * f), round(alto * f)), Image.LANCZOS)
+    elif lado < 1600:  # fotos pequeñas: ampliar mejora la lectura
         f = 1600 / lado
         img = img.resize((round(ancho * f), round(alto * f)), Image.LANCZOS)
     elif lado > 3200:  # fotos enormes: reducir ahorra memoria y tiempo

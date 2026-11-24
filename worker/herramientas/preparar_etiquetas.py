@@ -25,6 +25,8 @@ from openpyxl.worksheet.datavalidation import DataValidation
 RAIZ = Path(__file__).resolve().parents[2] / "calibracion"
 IMAGENES = RAIZ / "imagenes"
 EXCEL = RAIZ / "etiquetas.xlsx"
+# Registro local de nombres originales -> códigos (permite deshacer el renombrado). Se borra con la carpeta.
+REGISTRO = RAIZ / "renombres_originales.csv"
 EXTENSIONES = {".jpg", ".jpeg", ".png", ".pdf"}
 FILAS_CON_FORMATO = 600  # filas con listas desplegables y colores preparados
 
@@ -33,12 +35,28 @@ CARPETAS = {
     "orden_salud_total": ("ORD-ST", "ORDEN", "SALUD_TOTAL"),
     "orden_sos": ("ORD-SOS", "ORDEN", "SOS"),
     "orden_otra": ("ORD-OTRA", "ORDEN", ""),
+    "orden_promover": ("ORD-PROM", "ORDEN", ""),
     "autorizacion_salud_total": ("AUT-ST", "AUTORIZACION", "SALUD_TOTAL"),
     "ops_sos": ("OPS-SOS", "AUTORIZACION", "SOS"),
     "historia": ("HC", "HISTORIA", ""),
+    "historia_salud_total": ("HC-ST", "HISTORIA", "SALUD_TOTAL"),
+    "historia_sos": ("HC-SOS", "HISTORIA", "SOS"),
     "plan_tratamiento": ("PLAN", "PLAN", ""),
     "no_identificables": ("NOID", "", ""),
     "otros": ("OTRO", "OTRO", ""),
+}
+
+# carpetas de historias -> prefijo de sus subcarpetas de caso (H001, HST001, HSOS001…)
+CASOS = {"historia": "H", "historia_salud_total": "HST", "historia_sos": "HSOS"}
+
+# Carpetas cuyas subcarpetas son subtipos (no casos de varias páginas):
+# carpeta -> {subcarpeta: (código para el nombre, valor de TIPO_PLAN)}
+SUBTIPOS = {
+    "plan_tratamiento": {
+        "fisicas": ("FT", "TERAPIA_FISICA"),
+        "fonoaudiologicas": ("FONO", "FONOAUDIOLOGIA"),
+        "ocupacionales": ("TO", "TERAPIA_OCUPACIONAL"),
+    },
 }
 
 LISTAS = {
@@ -49,6 +67,7 @@ LISTAS = {
     "SI": ["SÍ"],
     "SINO": ["SÍ", "NO"],
     "SINO_NA": ["SÍ", "NO", "NO_APLICA"],
+    "TIPO_PLAN": ["TERAPIA_FISICA", "FONOAUDIOLOGIA", "TERAPIA_OCUPACIONAL", "OTRA", "NO_INDICA"],
     "ESPECIALIDAD": [
         "FISIOTERAPIA", "FONOAUDIOLOGIA", "TERAPIA_OCUPACIONAL", "TERAPIA_RESPIRATORIA", "FISIATRIA",
         "ORTOPEDIA", "EQUIPO_INTERDISCIPLINARIO", "INFILTRACIONES", "NO_INDICA", "VARIAS",
@@ -90,14 +109,19 @@ COLUMNAS = [
      "Solo Salud Total: SÍ si el campo «N.º ORDEN DE DIRECCIONAMIENTO» tiene un número; NO si está vacío."),
     ("ESPECIALIDAD_INDICADA", "dato", 22, "ESPECIALIDAD", "HISTORIA",
      "Especialidad a la que la historia remite o indica valoración. NO_INDICA si no lo dice."),
+    ("TIPO_PLAN", "dato", 20, "TIPO_PLAN", "PLAN",
+     "Terapia del plan de tratamiento: física, fonoaudiología u ocupacional. Viene sugerida por la subcarpeta."),
+    ("NUMERO_SESIONES", "dato", 10, None, "PLAN", "Cuántas sesiones o fechas de asistencia trae el plan (solo el número)."),
+    ("FECHA_PRIMERA_SESION", "dato", 13, None, "PLAN", "Primera fecha de asistencia del plan. Formato DD/MM/AAAA."),
+    ("FECHA_ULTIMA_SESION", "dato", 13, None, "PLAN", "Última fecha de asistencia del plan. Formato DD/MM/AAAA."),
     ("EMITIDA_POR_PROMOVER", "dato", 11, "SINO", "ORDEN", "SÍ si la orden la expidió PROMOVER."),
     ("ETIQUETADO_POR", "control", 11, None, None, "Iniciales de quien llenó la fila."),
     ("REVISADO_POR", "control", 11, None, None, "Iniciales de la segunda persona (solo en las filas de revisión cruzada)."),
     ("OBSERVACIONES", "control", 30, None, None, "Dudas o detalles. NO escribir datos del paciente aquí."),
     ("ESTADO_FILA", "control", 16, None, None, "Lo calcula el Excel: FALTA CLASIFICAR, LISTA o ARCHIVO_NO_ENCONTRADO."),
 ]
-CAMPOS_FECHA = {"FECHA_EMISION", "FECHA_VENCIMIENTO"}
-CAMPOS_TEXTO = {"ID", "ARCHIVO", "DOCUMENTO", "NUMERO_ORDEN", "DIAGNOSTICO_CIE10", "FECHA_EMISION", "FECHA_VENCIMIENTO"}
+CAMPOS_FECHA = {"FECHA_EMISION", "FECHA_VENCIMIENTO", "FECHA_PRIMERA_SESION", "FECHA_ULTIMA_SESION"}
+CAMPOS_TEXTO = {"ID", "ARCHIVO", "DOCUMENTO", "NUMERO_ORDEN", "DIAGNOSTICO_CIE10", "FECHA_EMISION", "FECHA_VENCIMIENTO", "FECHA_PRIMERA_SESION", "FECHA_ULTIMA_SESION"}
 
 COLORES = {
     "auto": ("475569", "F1F5F9"),
@@ -141,23 +165,51 @@ def renombrar_nuevos(conocidos: set[str]) -> int:
     personales: ORD-SOS-001.jpg, historia/H001/H001-p01.jpg, etc."""
     cambios = 0
     validos = lambda r: r.is_file() and r.suffix.lower() in EXTENSIONES  # noqa: E731
+    registro: list[tuple[str, str]] = []
 
-    # Carpetas de caso de las historias: H001, H002…
-    base_hc = IMAGENES / "historia"
-    if base_hc.exists():
+    def mover(origen: Path, destino: Path) -> None:
+        registro.append((origen.relative_to(IMAGENES).as_posix(), destino.relative_to(IMAGENES).as_posix()))
+        origen.rename(destino)
+
+    # Subtipos (p. ej. planes por terapia): PLAN-FT-001, PLAN-FONO-001…
+    for carpeta, subtipos in SUBTIPOS.items():
+        prefijo = CARPETAS[carpeta][0]
+        for sub, (codigo, _v) in subtipos.items():
+            base = IMAGENES / carpeta / sub
+            if not base.exists():
+                continue
+            pref = f"{prefijo}-{codigo}"
+            usados = {q.stem for q in base.iterdir() if q.is_file()}
+            n = 0
+            for ruta in sorted(q for q in base.iterdir() if validos(q)):
+                if ruta.relative_to(IMAGENES).as_posix() in conocidos or re.fullmatch(rf"{re.escape(pref)}-\d{{3}}", ruta.stem):
+                    continue
+                while True:
+                    n += 1
+                    if f"{pref}-{n:03d}" not in usados:
+                        break
+                usados.add(f"{pref}-{n:03d}")
+                mover(ruta, ruta.with_name(f"{pref}-{n:03d}{ruta.suffix.lower()}"))
+                cambios += 1
+
+    # Carpetas de caso de las historias: H001, HST001, HSOS001…
+    for carpeta_hc, pref in CASOS.items():
+        base_hc = IMAGENES / carpeta_hc
+        if not base_hc.exists():
+            continue
         usados = {d.name for d in base_hc.iterdir() if d.is_dir()}
         n = 0
         for caso in sorted(d for d in base_hc.iterdir() if d.is_dir() and not d.name.startswith("_EJEMPLO")):
-            if re.fullmatch(r"H\d{3}", caso.name) or any(
+            if re.fullmatch(rf"{pref}\d{{3}}", caso.name) or any(
                 q.relative_to(IMAGENES).as_posix() in conocidos for q in caso.iterdir()
             ):
                 continue
             while True:
                 n += 1
-                if f"H{n:03d}" not in usados:
+                if f"{pref}{n:03d}" not in usados:
                     break
-            usados.add(f"H{n:03d}")
-            caso.rename(caso.with_name(f"H{n:03d}"))
+            usados.add(f"{pref}{n:03d}")
+            mover(caso, caso.with_name(f"{pref}{n:03d}"))
             cambios += 1
 
     for carpeta, (prefijo, _t, _e) in CARPETAS.items():
@@ -165,7 +217,8 @@ def renombrar_nuevos(conocidos: set[str]) -> int:
         if not base.exists():
             continue
         # Páginas dentro de cada caso: se numeran una sola vez, en orden alfabético del nombre original.
-        for caso in (d for d in base.iterdir() if d.is_dir() and not d.name.startswith("_EJEMPLO")):
+        for caso in (d for d in base.iterdir() if d.is_dir() and not d.name.startswith("_EJEMPLO")
+                     and d.name not in SUBTIPOS.get(carpeta, {})):
             paginas = sorted(q for q in caso.iterdir() if validos(q))
             if any(q.relative_to(IMAGENES).as_posix() in conocidos for q in paginas):
                 continue
@@ -174,6 +227,7 @@ def renombrar_nuevos(conocidos: set[str]) -> int:
                 destino = q.with_name(f"{caso.name}-p{i:02d}{q.suffix.lower()}")
                 if q != destino:
                     tmp = q.with_name(f"__tmp_{i:02d}{q.suffix.lower()}")
+                    registro.append((q.relative_to(IMAGENES).as_posix(), destino.relative_to(IMAGENES).as_posix()))
                     q.rename(tmp)
                     temporales.append((tmp, destino))
             for tmp, destino in temporales:
@@ -191,8 +245,17 @@ def renombrar_nuevos(conocidos: set[str]) -> int:
                 if nuevo_nombre not in usados:
                     break
             usados.add(nuevo_nombre)
-            ruta.rename(ruta.with_name(nuevo_nombre + ruta.suffix.lower()))
+            mover(ruta, ruta.with_name(nuevo_nombre + ruta.suffix.lower()))
             cambios += 1
+    if registro:
+        import csv
+
+        nuevo = not REGISTRO.exists()
+        with REGISTRO.open("a", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f)
+            if nuevo:
+                w.writerow(["ORIGINAL", "CODIGO"])
+            w.writerows(registro)
     return cambios
 
 
@@ -367,15 +430,16 @@ def main() -> None:
         partes = relativa.split("/")
         carpeta = partes[0]
         _p, tipo, eps = CARPETAS.get(carpeta, ("", "", ""))
-        caso = partes[1] if len(partes) > 2 else ""
+        subtipo = SUBTIPOS.get(carpeta, {}).get(partes[1]) if len(partes) > 2 else None
+        caso = partes[1] if len(partes) > 2 and not subtipo else ""
         formato = ruta.suffix.lower().lstrip(".").replace("jpeg", "jpg").upper()
         n_id += 1
         fila = [f"E-{n_id:04d}", carpeta, relativa, caso, formato,
                 paginas_pdf(ruta) if formato == "PDF" else 1, grupo_para(relativa), tipo, eps]
         for c, v in enumerate(fila, start=1):
             ws.cell(row=siguiente, column=c, value=v)
-        if formato == "PDF":
-            ws.cell(row=siguiente, column=11, value=None)
+        if subtipo:
+            ws[f'{COL["TIPO_PLAN"]}{siguiente}'] = subtipo[1]
         ws[f'{COL["ESTADO_FILA"]}{siguiente}'] = formula_estado(siguiente)
         siguiente += 1
         nuevos += 1

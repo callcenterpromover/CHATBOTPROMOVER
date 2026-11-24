@@ -30,3 +30,5 @@ graphify-out/
 
 # Calibracion del OCR: imagenes reales de pacientes. NUNCA subir.
 calibracion/
+calibracion*.7z
+calibracion*.zip

@@ -99,7 +99,8 @@ def test_fecha_de_vencimiento_dudosa_queda_con_baja_confianza():
 def test_autorizacion_salud_total_con_y_sin_direccionamiento():
     con = extraer("CONSULTAS PARAMEDICAS - ORDEN DE DIRECCIONAMIENTO\nN.º ORDEN DE DIRECCIONAMIENTO: 445566")
     sin = extraer("CONSULTAS PARAMEDICAS - ORDEN DE DIRECCIONAMIENTO\nN.º ORDEN DE DIRECCIONAMIENTO:\nPaciente: X Y")
-    assert con.tipo_documento == "AUTORIZACION" and con.direccionamiento_con_valor is True
+    # El direccionamiento de Salud Total se maneja como orden (PROMOVER, 2026-11).
+    assert con.tipo_documento == "ORDEN" and con.direccionamiento_con_valor is True
     assert sin.direccionamiento_con_valor is False
 
 
@@ -277,3 +278,37 @@ def test_estado_lista_para_revision_solo_si_no_falta_nada():
     assert calcular_estado(completa, True) == "PENDIENTE_VERIFICACION_HUMANA"
     assert calcular_estado({**completa, "plan_estado": "REQUERIDO_PENDIENTE"}, False) == "ESPERANDO_PLAN"
     assert calcular_estado({**completa, "eps": "OTRA"}, False) == "PENDIENTE_VERIFICACION_HUMANA"
+
+
+# ---------------------------------------------------------------- calibración 2026-11
+
+@pytest.mark.parametrize("texto,categoria", [
+    ("Consulta de primera vez por fisioterapia (respiratoria)", "TERAPIA_RESPIRATORIA"),
+    ("Consulta por fisioterapia (ocupacional)", "TERAPIA_OCUPACIONAL"),
+    ("Fisioterapia (terapia fisica) rodilla", "FISIOTERAPIA"),
+    ("Terapia fonoaudiologica integral", "FONOAUDIOLOGIA"),
+])
+def test_fisioterapia_con_parentesis_y_variantes(texto, categoria):
+    assert clasificar_servicio(texto)[0] == categoria
+
+
+@pytest.mark.parametrize("texto", [
+    "Consultas paramedicas - Consulta de ingreso modelo fisioterapia y rehabilitacion",
+    "890215 Consulta de primera vez por equipo interdisciplinario",
+    "Valoracion por UPI osteomuscular",
+    "Consulta de primera vez por especialista en medicina fisica y rehabilitacion",
+])
+def test_servicios_que_obligan_a_revisar_la_historia(texto):
+    assert clasificar_servicio(texto)[3] is True
+
+
+def test_especialidad_desde_la_seccion_de_analisis():
+    texto = "HISTORIA CLINICA\nEnfermedad actual: dolor lumbar\nANALISIS Y PLAN\nPaciente con buena evolucion, continuar terapia ocupacional 10 sesiones"
+    assert extraer(texto).especialidad_en_historia == "TERAPIA_OCUPACIONAL"
+
+
+def test_fechas_con_mes_abreviado_y_anio_imposible():
+    ex = extraer("DIRECCIONAMIENTO CONSULTAS PARAMEDICAS\nFecha Vencimiento: 22 Abr 2027")
+    assert ex.valor("FECHA_VENCIMIENTO") == "2027-04-22"
+    dudosa = extraer("ORDEN MEDICA\nFecha de expedicion: 04/11/2076")
+    assert next(c for c in dudosa.campos if c.campo == "FECHA_EMISION").confianza == "BAJA"
