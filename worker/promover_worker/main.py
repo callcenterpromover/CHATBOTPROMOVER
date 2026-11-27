@@ -104,7 +104,7 @@ def procesar(trabajo: dict, cola: Cola, cfg: Config) -> str:
     return resultado["estado"] if cola.guardar(trabajo["id"], resultado) else "DESCARTADO"
 
 
-def avisar_panel(trabajo_id: int, cfg: Config) -> None:
+def avisar_panel(trabajo_id: int, cfg: Config, cola: Cola | None = None) -> None:
     """Pide al panel que escriba al paciente si hay que pedirle algo (reenvío, páginas faltantes).
     Si el panel no responde, la solicitud igual queda con sus alertas: no es un fallo del trabajo."""
     if not cfg.panel_url or not cfg.worker_secret:
@@ -117,8 +117,12 @@ def avisar_panel(trabajo_id: int, cfg: Config) -> None:
             timeout=15,
         )
         log.info("trabajo=%s aviso=%s", trabajo_id, r.json().get("resultado") if r.is_success else r.status_code)
+        if not r.is_success and cola is not None:
+            cola.registrar_error(f"aviso_panel_{r.status_code}", f"trabajo {trabajo_id}")
     except (httpx.HTTPError, ValueError) as e:
         log.warning("trabajo=%s aviso_fallido tipo=%s", trabajo_id, type(e).__name__)
+        if cola is not None:
+            cola.registrar_error("aviso_panel_sin_conexion", type(e).__name__[:40])
 
 
 def ciclo(cola: Cola, cfg: Config, una_vez: bool) -> int:
@@ -160,10 +164,12 @@ def ciclo(cola: Cola, cfg: Config, una_vez: bool) -> int:
             except httpx.HTTPError:
                 estado = "SIN_CONEXION"
             log.error("trabajo=%s fallo=%s estado=%s", trabajo["id"], type(e).__name__, estado)
+            if estado != "SIN_CONEXION":
+                cola.registrar_error(f"ocr_{type(e).__name__[:40]}", f"trabajo {trabajo['id']} quedó {estado}")
         else:
             log.info("trabajo=%s estado=%s ms=%d", trabajo["id"], estado, (time.monotonic() - inicio) * 1000)
             if estado != "DESCARTADO":
-                avisar_panel(trabajo["id"], cfg)
+                avisar_panel(trabajo["id"], cfg, cola)
         procesados += 1
 
 

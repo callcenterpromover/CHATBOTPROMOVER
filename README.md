@@ -28,6 +28,18 @@ Variables de servidor en Vercel (nunca con `NEXT_PUBLIC_`): `SUPABASE_SECRET_KEY
 `META_PHONE_NUMBER_ID`, `META_WHATSAPP_TOKEN`. Registrar en Meta el webhook
 `https://chatbotpromover.vercel.app/api/whatsapp`.
 
+## Registro de errores (solo super_admin)
+
+Menú **Configuración → Registro de errores** (`/admin/errores`):
+- **Causas más probables ahora**: lo mal configurado y los errores que más pesan (gravedad × frecuencia × qué tan reciente).
+- **Revisión de la configuración**: qué variables faltan en Vercel (nunca muestra sus valores), si el bot está encendido,
+  si llegan mensajes de WhatsApp y si el worker de OCR da señal de vida.
+- **Errores sin revisar** con causa probable y cómo corregirlos (`web/lib/diagnostico.ts`), y el registro reciente.
+
+Lo escriben el webhook, el envío de respuestas, el aviso del OCR y el worker, mediante `registrar_error`
+(solo `service_role`). Sin datos de pacientes; el mismo error repetido en 10 minutos se suma; se conserva 30 días.
+Requiere aplicar la migración `supabase/migrations/20261127000000_registro_errores.sql`.
+
 Pendiente legal: la Ley 1581 exige conservar prueba de la autorización, pero el cierre borra todo,
 incluida `consentimiento_en`. Definir con jurídica cómo conservarla sin datos clínicos.
 

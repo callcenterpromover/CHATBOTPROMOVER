@@ -103,6 +103,11 @@ async function aplicar(
 }
 
 /** Procesa un mensaje entrante del paciente y envía las respuestas. */
+/** ¿El fallo fue al enviar la respuesta (proveedor o configuración) o dentro del bot (base de datos)? */
+export function origenDeFallo(codigo: string): "envio" | "bot" {
+  return /_envio_|^falta_configuracion_(kapso|meta)$/.test(codigo) ? "envio" : "bot";
+}
+
 export async function manejarEntrada(telefono: string, entrada: Entrada, canal: Canal) {
   const db = crearClienteAdmin();
   await limpiarAntiguos(db);
