@@ -12,6 +12,10 @@ export function firmaValida(cuerpo: string, firma: string | null, secreto: strin
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** Tipos de mensaje que no son del paciente hacia el bot (reacciones, stickers, avisos del sistema):
+ *  se descartan sin responder ni tocar la base, para no gastar mensajes ni consultas. */
+export const TIPOS_IGNORADOS = new Set(["reaction", "sticker", "system", "unsupported", "ephemeral", "request_welcome", "errors"]);
+
 export type MensajeEntrante = { id: string; telefono: string; entrada: Entrada };
 
 type MensajeMeta = {
@@ -35,6 +39,7 @@ export function extraerMensajes(cuerpo: unknown, numeroId: string | undefined): 
       if (numeroId && valor?.metadata?.phone_number_id !== numeroId) continue;
       for (const m of valor?.messages ?? []) {
         if (!m.id || !m.from || !/^\d{8,15}$/.test(m.from)) continue;
+        if (m.type && TIPOS_IGNORADOS.has(m.type)) continue;
         let entrada: Entrada;
         if (m.type === "text" && m.text?.body) entrada = { tipo: "texto", texto: m.text.body.slice(0, 1000) };
         else if (m.type === "image" && m.image?.id) entrada = { tipo: "media", mediaId: m.image.id };

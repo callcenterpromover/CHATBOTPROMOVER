@@ -32,6 +32,8 @@ describe("mensajes de Kapso", () => {
       evento({ id: "c", from: "573000000001", type: "document", document: { id: "9876543210" } }),
       evento({ id: "d", from: "573000000001", type: "audio", audio: { id: "555555" } }),
       evento({ id: "e", from: "573000000001", type: "location" }),
+      evento({ id: "f", from: "573000000001", type: "reaction" }),
+      evento({ id: "g", from: "573000000001", type: "sticker" }),
     ].flatMap((e) => extraerMensajesKapso(e, "111"));
     expect(r.map((m) => m.entrada)).toEqual([
       { tipo: "texto", texto: "Hola" },
