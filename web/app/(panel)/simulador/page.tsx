@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { claseBoton, claseBotonSecundario, claseCampo } from "@/app/componentes";
-import { modoSimulacion } from "@/lib/bot/canal";
+import { modoSimulacion } from "@/lib/bot/estado";
 import { codigoSolicitud, etiqueta, ESTADOS } from "@/lib/catalogo";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { requerirSesion } from "@/lib/supabase/server";
@@ -24,13 +24,13 @@ function ConFormato({ texto }: { texto: string }) {
 }
 
 export default async function PaginaSimulador({ searchParams }: PageProps<"/simulador">) {
-  if (!modoSimulacion()) notFound();
   const { operador } = await requerirSesion();
   if (!operador) return null;
+  const db = crearClienteAdmin();
+  if (!(await modoSimulacion(db))) notFound();
 
   const sp = await searchParams;
   const tel = typeof sp.tel === "string" && /^5730000000\d{2}$/.test(sp.tel) ? sp.tel : "573000000099";
-  const db = crearClienteAdmin();
   const [{ data: mensajes }, { data: conv }] = await Promise.all([
     db.from("mensajes_simulador").select("id, direccion, texto, creado_en").eq("telefono", tel).order("id").limit(300),
     db.from("conversaciones").select("paso, solicitud_id").eq("telefono", tel).maybeSingle(),

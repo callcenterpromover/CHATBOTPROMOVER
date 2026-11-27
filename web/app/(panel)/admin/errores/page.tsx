@@ -4,7 +4,8 @@ import { AutoRefresco } from "@/components/AutoRefresco";
 import { Icono } from "@/components/Iconos";
 import { Notificaciones, type Aviso } from "@/components/Notificaciones";
 import { CargaAlEnviar } from "@/components/PantallaCarga";
-import { modoSimulacion } from "@/lib/bot/canal";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { modoSimulacion } from "@/lib/bot/estado";
 import {
   ETIQUETA_GRAVEDAD,
   ETIQUETA_ORIGEN,
@@ -54,7 +55,7 @@ function instante() {
   return Date.now();
 }
 
-function variablesPresentes(): VariablesPresentes {
+async function variablesPresentes(db: SupabaseClient): Promise<VariablesPresentes> {
   const hay = (k: string) => Boolean(process.env[k]?.trim());
   return {
     SUPABASE_SECRET_KEY: hay("SUPABASE_SECRET_KEY"),
@@ -65,7 +66,7 @@ function variablesPresentes(): VariablesPresentes {
     META_PHONE_NUMBER_ID: hay("META_PHONE_NUMBER_ID"),
     META_WHATSAPP_TOKEN: hay("META_WHATSAPP_TOKEN"),
     WORKER_SECRET_VALIDO: (process.env.WORKER_SECRET ?? "").length >= 32,
-    MODO_SIMULACION: modoSimulacion(),
+    MODO_SIMULACION: await modoSimulacion(db),
   };
 }
 
@@ -89,7 +90,7 @@ export default async function PaginaErrores({ searchParams }: PageProps<"/admin/
 
   const registro = (filas ?? []) as FilaRegistro[];
   const sistema = errorEstado ? null : (estado as EstadoSistema);
-  const revisiones = ordenarRevisiones(revisarConfiguracion(variablesPresentes(), sistema, ahora));
+  const revisiones = ordenarRevisiones(revisarConfiguracion(await variablesPresentes(supabase), sistema, ahora));
   const grupos = agruparErrores(registro, ahora);
   const fallas = revisiones.filter((r) => !r.ok);
 

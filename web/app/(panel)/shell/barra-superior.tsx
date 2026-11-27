@@ -19,6 +19,7 @@ function migas(ruta: string, sp: URLSearchParams): Miga[] {
     return [{ texto: "Configuración" }, { texto: "Agendas", href: "/admin/agendas" }, { texto: VISTAS_AGENDA[sp.get("v") ?? "servicios"] ?? VISTAS_AGENDA.servicios }];
   if (ruta.startsWith("/admin/usuarios")) return [{ texto: "Configuración" }, { texto: "Usuarios" }];
   if (ruta.startsWith("/admin/errores")) return [{ texto: "Configuración" }, { texto: "Registro de errores" }];
+  if (ruta.startsWith("/admin/configuracion")) return [{ texto: "Configuración" }, { texto: "Configuraciones" }];
   if (ruta.startsWith("/simulador")) return [{ texto: "Herramientas" }, { texto: "Simulador de WhatsApp" }];
   return [];
 }

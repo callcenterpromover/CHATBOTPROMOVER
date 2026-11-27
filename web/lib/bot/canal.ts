@@ -1,13 +1,11 @@
-// Envío de mensajes al paciente. En WhatsApp real usa la API de Meta; en el simulador guarda la
+// Envío de mensajes al paciente. En WhatsApp real usa la API de Meta; en el simulador (modo simulación
+// encendido en Configuraciones) guarda la
 // respuesta en `mensajes_simulador` para mostrarla en el panel. En WhatsApp real no se guarda nada.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { modoSimulacion } from "./estado";
 import { enviarPorKapso } from "./kapso";
 import type { Canal } from "./motor";
-
-export function modoSimulacion() {
-  return process.env.MODO_SIMULACION === "1";
-}
 
 async function enviarWhatsApp(telefono: string, texto: string) {
   const token = process.env.META_WHATSAPP_TOKEN;
@@ -46,7 +44,7 @@ export async function enviar(db: SupabaseClient, canal: Canal, telefono: string,
   const textos = agrupar(respuestas);
   if (!textos.length) return;
   if (canal === "simulador") {
-    if (!modoSimulacion()) throw new Error("simulador_desactivado");
+    if (!(await modoSimulacion(db))) throw new Error("simulador_desactivado");
     const { error } = await db
       .from("mensajes_simulador")
       .insert(textos.map((texto) => ({ telefono, direccion: "SALIENTE", texto })));

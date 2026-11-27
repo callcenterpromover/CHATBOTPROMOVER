@@ -25,7 +25,8 @@ controles vigentes, lo que falta antes de usar datos reales y qué hacer ante un
 - Máximo 5 intentos de inicio de sesión por cuenta y 20 por IP cada 15 minutos (límite en la base,
   con claves resumidas por HMAC: no se guarda la IP ni el correo).
 - La sesión se cierra sola tras 30 minutos sin actividad. Las cookies de sesión son `httpOnly`.
-- El simulador solo existe con `MODO_SIMULACION=1` y solo acepta números ficticios (`5730000000xx`).
+- El simulador solo existe con el modo simulación encendido (Configuraciones, solo super_admin) y solo
+  acepta números ficticios (`5730000000xx`).
 
 **Claves**
 - La clave secreta de Supabase, el token de Meta, la clave de Kapso y `WORKER_SECRET` solo viven en variables de servidor
@@ -60,7 +61,7 @@ controles vigentes, lo que falta antes de usar datos reales y qué hacer ante un
 - [ ] Regenerar la contraseña de la base (fuerte, 20+ caracteres) y la clave secreta, que pasaron por un chat.
       Actualizar Vercel, `web/.env.local` y `worker/.env`.
 - [ ] Contraseñas fuertes y únicas para cada operador; activar MFA si el plan lo permite.
-- [ ] `MODO_SIMULACION=0` en Vercel y `PERMITIR_FUENTE_LOCAL=0` en el worker.
+- [ ] Modo simulación apagado en Configuraciones y `PERMITIR_FUENTE_LOCAL=0` en el worker.
 - [ ] Decidir la región de la base (hoy EE. UU.; la documentación preveía São Paulo) y reflejarlo en la autorización.
 - [ ] Aprobación jurídica de los textos marcados PRELIMINAR y de cómo conservar la prueba de autorización.
 - [ ] Equipo de la sede: cuenta de Windows con contraseña, disco cifrado (BitLocker si TI lo permite),
