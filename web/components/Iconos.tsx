@@ -20,7 +20,8 @@ export type NombreIcono =
   | "check"
   | "falta"
   | "alerta"
-  | "flecha";
+  | "flecha"
+  | "ajustes";
 
 const TRAZOS: Record<NombreIcono, React.ReactNode> = {
   bandeja: (
@@ -105,6 +106,13 @@ const TRAZOS: Record<NombreIcono, React.ReactNode> = {
     </>
   ),
   flecha: <path d="m7.5 5 5 5-5 5" />,
+  ajustes: (
+    <>
+      <path d="M3.75 6h6.5M14.25 6h2M3.75 14h2M9.75 14h6.5" />
+      <circle cx="12.25" cy="6" r="2" />
+      <circle cx="7.75" cy="14" r="2" />
+    </>
+  ),
 };
 
 export function Icono({ nombre, className = "size-5", ...props }: { nombre: NombreIcono } & SVGProps<SVGSVGElement>) {

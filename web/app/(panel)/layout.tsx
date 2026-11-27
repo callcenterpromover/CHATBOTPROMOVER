@@ -3,16 +3,14 @@ import { Suspense } from "react";
 import { Icono } from "@/components/Iconos";
 import { cerrarSesion } from "@/app/login/actions";
 import { CargaAlEnviar } from "@/components/PantallaCarga";
-import { modoSimulacion } from "@/lib/bot/canal";
 import { ROLES, esAdmin } from "@/lib/roles";
 import { requerirSesion } from "@/lib/supabase/server";
-import { InterruptorBot } from "./interruptor-bot";
 import { IrASolicitud, Migas, MenuUsuario } from "./shell/barra-superior";
 import { BarraLateral, CajonNavegacion, type GrupoNav } from "./shell/navegacion";
 
 // Estructura del panel (docs/superpowers/specs/2026-11-24-rediseno-interfaz.md): barra lateral con el
-// trabajo (colas), el seguimiento y la configuración; barra superior con ubicación, «ir a solicitud»,
-// estado del bot y menú de usuario.
+// trabajo (colas), el seguimiento y la configuración; barra superior con ubicación, «ir a solicitud»
+// y menú de usuario. El bot, el OCR y el modo simulación se controlan en Configuraciones (super_admin).
 function haceUnDia() {
   return new Date(Date.now() - 86_400_000).toISOString();
 }
@@ -22,9 +20,10 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
   const admin = esAdmin(operador?.rol);
   const superAdmin = operador?.rol === "super_admin";
 
-  const [{ data: bot }, { data: asignaciones }, almacen, { count: erroresAbiertos }] = await Promise.all([
-    superAdmin
-      ? supabase.from("configuracion_bot").select("activo").eq("id", 1).maybeSingle()
+  const [{ data: config }, { data: asignaciones }, almacen, { count: erroresAbiertos }] = await Promise.all([
+    // Si la consulta falla (p. ej. falta la migración), el simulador queda oculto.
+    operador
+      ? supabase.from("configuracion_bot").select("simulacion").eq("id", 1).maybeSingle<{ simulacion: boolean }>()
       : Promise.resolve({ data: null }),
     operador ? supabase.from("solicitudes").select("asignado_a") : Promise.resolve({ data: [] }),
     cookies(),
@@ -78,13 +77,16 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
                   },
                   { href: "/admin/usuarios", texto: "Usuarios", icono: "personas" as const, coincide: { ruta: "/admin/usuarios" } },
                   ...(superAdmin
-                    ? [{ href: "/admin/errores", texto: "Registro de errores", icono: "alerta" as const, conteo: erroresAbiertos || undefined, coincide: { ruta: "/admin/errores" } }]
+                    ? [
+                        { href: "/admin/errores", texto: "Registro de errores", icono: "alerta" as const, conteo: erroresAbiertos || undefined, coincide: { ruta: "/admin/errores" } },
+                        { href: "/admin/configuracion", texto: "Configuraciones", icono: "ajustes" as const, coincide: { ruta: "/admin/configuracion" } },
+                      ]
                     : []),
                 ],
               },
             ]
           : []),
-        ...(modoSimulacion()
+        ...(config?.simulacion === true
           ? [{ titulo: "Herramientas", items: [{ href: "/simulador", texto: "Simulador de WhatsApp", icono: "chat" as const, coincide: { ruta: "/simulador" } }] }]
           : []),
       ]
@@ -103,7 +105,6 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
       </button>
     </form>
   );
-  const interruptor = superAdmin ? <InterruptorBot activoInicial={bot?.activo === true} /> : null;
   const rol = operador ? ROLES[operador.rol] : "";
 
   return (
@@ -120,7 +121,6 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
                 grupos={grupos}
                 pie={
                   <div className="space-y-3 text-sm">
-                    {interruptor}
                     {operador ? (
                       <div className="flex items-center justify-between gap-3">
                         <span className="leading-tight text-white">
@@ -143,7 +143,6 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
               </div>
             </Suspense>
             {operador ? <IrASolicitud /> : null}
-            <div className="hidden items-center lg:flex">{interruptor}</div>
             {operador ? <MenuUsuario nombre={operador.nombre} rol={rol} salir={salir} /> : null}
           </div>
         </header>

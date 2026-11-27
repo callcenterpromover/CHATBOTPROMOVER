@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { modoSimulacion } from "@/lib/bot/canal";
+import { modoSimulacion } from "@/lib/bot/estado";
 import type { Entrada } from "@/lib/bot/motor";
 import { manejarEntrada } from "@/lib/bot/servicio";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
@@ -14,7 +14,7 @@ import { DOCUMENTOS_FICTICIOS } from "./documentos";
 const TELEFONO = /^5730000000\d{2}$/;
 
 async function preparar(telefono: string) {
-  if (!modoSimulacion()) redirect("/");
+  if (!(await modoSimulacion(crearClienteAdmin()))) redirect("/");
   const { operador } = await requerirSesion();
   if (!operador || !TELEFONO.test(telefono)) redirect("/");
 }

@@ -131,7 +131,7 @@ const FIJOS: Record<string, Explicacion> = {
     gravedad: "alta",
   },
   simulador_desactivado: {
-    titulo: "Se usó el simulador con MODO_SIMULACION apagado",
+    titulo: "Se usó el simulador con el modo simulación apagado",
     causa: "Alguien abrió el simulador después de apagarlo.",
     solucion: "No requiere acción en operación real.",
     gravedad: "baja",
@@ -417,8 +417,8 @@ export function revisarConfiguracion(v: VariablesPresentes, e: EstadoSistema | n
     ok: !v.MODO_SIMULACION,
     titulo: "Modo simulación apagado",
     detalle: v.MODO_SIMULACION
-      ? "MODO_SIMULACION=1: debe ponerse en 0 cuando hay pacientes reales."
-      : "MODO_SIMULACION está apagado.",
+      ? "El modo simulación está encendido: apágalo en Configuraciones cuando haya pacientes reales."
+      : "El modo simulación está apagado.",
     gravedad: "media",
   });
 

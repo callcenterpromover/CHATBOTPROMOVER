@@ -115,12 +115,14 @@ export default async function PaginaDashboard() {
     casos_con_alerta_documental?: number;
     ocr_pendientes?: number;
     ocr_con_error?: number;
+    ocr_activo?: boolean;
     worker_estado?: "ENCENDIDO" | "APAGADO" | "SIN_SENAL" | "NUNCA";
     worker_minutos_desde?: number | null;
     worker_equipo?: string | null;
   };
   // El estado lo calcula la base con su propia hora: ENCENDIDO, APAGADO (con el botón) o SIN_SENAL.
-  const estadoWorker = r.worker_estado ?? "NUNCA";
+  // Pausado desde Configuraciones: el programa sigue abierto pero no toma documentos.
+  const estadoWorker = r.ocr_activo === false ? "PAUSADO" : (r.worker_estado ?? "NUNCA");
   const segundosDesde = r.worker_minutos_desde == null ? null : Number(r.worker_minutos_desde) * 60;
   const desde = r.worker_equipo ? ` en ${r.worker_equipo}` : "";
   const hace =
@@ -144,11 +146,15 @@ export default async function PaginaDashboard() {
       ),
     },
     NUNCA: { titulo: "sin conectar", detalle: <>todavía no se ha encendido nunca.</> },
+    PAUSADO: {
+      titulo: "pausado",
+      detalle: <>un super administrador lo pausó en Configuraciones. Los documentos quedan en cola hasta que se reanude.</>,
+    },
   }[estadoWorker];
   const tonoWorker =
     estadoWorker === "ENCENDIDO"
       ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-      : estadoWorker === "APAGADO"
+      : estadoWorker === "APAGADO" || estadoWorker === "PAUSADO"
         ? "border-slate-200 bg-slate-100 text-slate-700"
         : "border-amber-200 bg-amber-50 text-amber-900";
 
@@ -208,7 +214,7 @@ export default async function PaginaDashboard() {
           <span
             aria-hidden="true"
             className={`mr-2 inline-block size-2.5 rounded-full align-middle ${
-              estadoWorker === "ENCENDIDO" ? "bg-emerald-500" : estadoWorker === "APAGADO" ? "bg-slate-400" : "bg-amber-500"
+              estadoWorker === "ENCENDIDO" ? "bg-emerald-500" : estadoWorker === "APAGADO" || estadoWorker === "PAUSADO" ? "bg-slate-400" : "bg-amber-500"
             }`}
           />
           <strong>Lector de documentos (OCR): {textoWorker.titulo}</strong> · {textoWorker.detalle}

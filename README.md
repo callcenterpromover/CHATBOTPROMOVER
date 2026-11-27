@@ -17,14 +17,17 @@ La documentación funcional está en `Downloads\chatbot\chatbot\PROMOVER_Chatbot
   Textos en `web/lib/bot/mensajes.ts`; los marcados **PRELIMINAR** requieren aprobación de PROMOVER.
 - Webhook para Meta: `web/app/api/whatsapp/route.ts` (verifica firma, no procesa dos veces un mensaje).
 - Avisos tras el OCR: el worker llama a `/api/interno/documento-procesado` con `WORKER_SECRET`.
-- **Simulador** (sin la API de Meta): con `MODO_SIMULACION=1`, el panel muestra «Simulador WhatsApp».
-  Los documentos adjuntos son los ficticios de `worker/entrada`; el worker debe estar corriendo.
-  Debe ponerse en `0` cuando haya pacientes reales.
+- **Configuraciones** (solo super_admin, menú Configuración → Configuraciones): interruptores del bot
+  de WhatsApp, del OCR (pausado, el worker no toma documentos y quedan en cola) y del modo simulación.
+  Cada cambio pide confirmación y queda en la auditoría.
+- **Simulador** (sin la API de Meta): con el modo simulación encendido en Configuraciones, el panel
+  muestra «Simulador de WhatsApp». Los documentos adjuntos son los ficticios de `worker/entrada`; el
+  worker debe estar corriendo. Debe apagarse cuando haya pacientes reales.
 - Pruebas: `npm --prefix web test`. Conversación completa contra la base:
   `npx tsx --env-file=.env.local scripts/probar-conversacion.mts` (desde `web/`).
 
-Variables de servidor en Vercel (nunca con `NEXT_PUBLIC_`): `SUPABASE_SECRET_KEY`, `WORKER_SECRET`,
-`MODO_SIMULACION`, y cuando exista la cuenta de Meta: `META_VERIFY_TOKEN`, `META_APP_SECRET`,
+Variables de servidor en Vercel (nunca con `NEXT_PUBLIC_`): `SUPABASE_SECRET_KEY`, `WORKER_SECRET`
+y cuando exista la cuenta de Meta: `META_VERIFY_TOKEN`, `META_APP_SECRET`,
 `META_PHONE_NUMBER_ID`, `META_WHATSAPP_TOKEN`. Registrar en Meta el webhook
 `https://chatbotpromover.vercel.app/api/whatsapp`.
 
