@@ -14,6 +14,12 @@ const MAX_DOCUMENTOS_POR_SOLICITUD = 30;
 
 type Conversacion = { telefono: string; solicitud_id: string | null; paso: Paso; datos: Datos };
 
+/** Pasos del flujo corto: no usan el catálogo de Agendas (no se consulta). */
+const PASOS_SIN_CATALOGO: Paso[] = ["INICIO", "RECOLECTANDO", "FINAL"];
+/** La limpieza no necesita correr con cada mensaje: 1 de cada 20 basta y ahorra dos consultas. */
+const PROBABILIDAD_LIMPIEZA = 0.05;
+const MINUTOS_ENTRE_REENVIOS = 30;
+
 async function limpiarAntiguos(db: SupabaseClient) {
   const hace2dias = new Date(Date.now() - 2 * 86_400_000).toISOString();
   const hace7dias = new Date(Date.now() - 7 * 86_400_000).toISOString();
@@ -110,7 +116,7 @@ export function origenDeFallo(codigo: string): "envio" | "bot" {
 
 export async function manejarEntrada(telefono: string, entrada: Entrada, canal: Canal) {
   const db = crearClienteAdmin();
-  await limpiarAntiguos(db);
+  if (Math.random() < PROBABILIDAD_LIMPIEZA) await limpiarAntiguos(db);
 
   const { data: conv } = await db.from("conversaciones").select("*").eq("telefono", telefono).maybeSingle<Conversacion>();
   const estado: Estado = conv ? { paso: conv.paso, datos: conv.datos ?? {} } : ESTADO_INICIAL;
@@ -119,22 +125,23 @@ export async function manejarEntrada(telefono: string, entrada: Entrada, canal: 
   let documentos: DocumentoRecibido[] = [];
   let campos: CampoLeido[] = [];
   if (conv?.solicitud_id) {
-    const [{ data: docs }, { data: cs }] = await Promise.all([
+    const [{ data: docs }, { data: cs }, { data }] = await Promise.all([
       db.from("trabajos_ocr").select("tipo_documento, estado").eq("solicitud_id", conv.solicitud_id),
       db.from("campos_extraidos").select("campo, confianza, valor_ocr").eq("solicitud_id", conv.solicitud_id).in("campo", ["DOCUMENTO", "NOMBRE"]),
+      db
+        .from("solicitudes")
+        .select("documento, nombre, eps, eps_texto, servicio_texto, servicio_cita_id, edad, historia_estado")
+        .eq("id", conv.solicitud_id)
+        .maybeSingle(),
     ]);
     documentos = (docs ?? []) as DocumentoRecibido[];
     campos = (cs ?? []) as CampoLeido[];
-    const { data } = await db
-      .from("solicitudes")
-      .select("documento, nombre, eps, eps_texto, servicio_texto, servicio_cita_id, edad, historia_estado")
-      .eq("id", conv.solicitud_id)
-      .maybeSingle();
     solicitud = data;
   }
 
-  // Sin catálogo (error de lectura) el bot sigue funcionando con servicio y horario en texto libre.
-  const catalogo = await cargarCatalogo(db);
+  // El catálogo solo lo usa el flujo paso a paso (conversaciones antiguas). Sin catálogo (error de
+  // lectura) el bot sigue funcionando con servicio y horario en texto libre.
+  const catalogo = PASOS_SIN_CATALOGO.includes(estado.paso) ? null : await cargarCatalogo(db);
   const r = procesar(estado, entrada, { ahora: new Date().toISOString(), solicitud, catalogo, documentos, campos });
   const datos: Datos = { ...r.estado.datos, canal };
 
@@ -142,7 +149,8 @@ export async function manejarEntrada(telefono: string, entrada: Entrada, canal: 
 
   if (solicitudId) {
     await db.from("solicitudes").update({ ultima_interaccion: new Date().toISOString() }).eq("id", solicitudId);
-    await db.rpc("recalcular_estado", { p_id: solicitudId });
+    // Sin acciones no cambió nada de la solicitud: no hace falta recalcular su estado.
+    if (r.acciones.length) await db.rpc("recalcular_estado", { p_id: solicitudId });
   }
 
   if (r.estado.paso === "INICIO" && !solicitudId) {
@@ -191,11 +199,25 @@ export async function avisarDocumentoProcesado(trabajoId: number) {
       db.from("campos_extraidos").select("campo, confianza, valor_ocr").eq("solicitud_id", trabajo.solicitud_id).in("campo", ["DOCUMENTO", "NOMBRE"]),
     ]);
     if (estadoRecoleccion(s ?? {}, (docs ?? []) as DocumentoRecibido[], (cs ?? []) as CampoLeido[]).tipo === "COMPLETA") {
+      // Solo si la conversación seguía recogiendo: si dos documentos terminan a la vez, avisa uno solo.
+      const { data: cerrada } = await db
+        .from("conversaciones")
+        .update({ paso: "FINAL", datos: { ...(conv.datos ?? {}), completa: true, recordado: new Date().toISOString() }, actualizado_en: new Date().toISOString() })
+        .eq("solicitud_id", trabajo.solicitud_id)
+        .eq("paso", "RECOLECTANDO")
+        .select("telefono");
+      if (!cerrada?.length) return "ya_avisado";
       texto = M.recibidoTodo;
-      await db.from("conversaciones").update({ paso: "FINAL", datos: { ...(conv.datos ?? {}), completa: true, recordado: new Date().toISOString() }, actualizado_en: new Date().toISOString() }).eq("solicitud_id", trabajo.solicitud_id);
     }
   }
   if (!texto && trabajo.estado === "REENVIO_REQUERIDO") {
+    // Varias fotos ilegibles seguidas: un solo aviso cada media hora.
+    const ultimo = conv.datos?.avisoReenvio ? new Date(conv.datos.avisoReenvio).getTime() : 0;
+    if (Date.now() - ultimo < MINUTOS_ENTRE_REENVIOS * 60_000) return "reenvio_ya_pedido";
+    await db
+      .from("conversaciones")
+      .update({ datos: { ...(conv.datos ?? {}), avisoReenvio: new Date().toISOString() } })
+      .eq("solicitud_id", trabajo.solicitud_id);
     texto = trabajo.error_codigo ? M.reenvioNoProcesable : M.reenvioIlegible;
   } else if (!texto && trabajo.tipo_documento === "HISTORIA" && conv.paso !== "HISTORIA" && conv.paso !== "RECOLECTANDO") {
     // Mientras el paciente sigue enviando páginas no se interrumpe; al escribir LISTO el bot ya avisa.

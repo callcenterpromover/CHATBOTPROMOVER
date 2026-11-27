@@ -3,6 +3,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Entrada } from "./motor";
+import { TIPOS_IGNORADOS } from "./whatsapp";
 
 export const KAPSO_API = "https://api.kapso.ai/meta/whatsapp/v24.0";
 
@@ -44,6 +45,7 @@ export function extraerMensajesKapso(cuerpo: unknown, numeroId: string | undefin
     const numero = ev.phone_number_id ?? ev.conversation?.phone_number_id;
     if (numeroId && numero !== numeroId) continue; // otro número de la cuenta
     if (m.kapso?.direction && m.kapso.direction !== "inbound") continue;
+    if (m.type && TIPOS_IGNORADOS.has(m.type)) continue;
 
     const telefono = (m.from ?? ev.conversation?.phone_number ?? "").replace(/\D/g, "");
     if (!/^\d{8,15}$/.test(telefono)) continue;

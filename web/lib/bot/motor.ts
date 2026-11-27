@@ -54,6 +54,9 @@ export type Datos = {
   recordado?: string; // flujo corto: último aviso de lo que falta
   ultimaEntrada?: string; // flujo corto: último mensaje del paciente (30 min de silencio = conversación terminada)
   completa?: boolean; // flujo corto: llegó todo
+  avisoUrgencia?: string; // último aviso de urgencias enviado (no se repite en 30 min)
+  avisoFormato?: string; // último aviso de «solo texto, fotos y PDF» (no se repite en 30 min)
+  avisoReenvio?: string; // último pedido de reenviar un documento ilegible (lo escribe servicio.ts)
 };
 
 const OPCION_ESPECIALISTAS = 0;
@@ -294,13 +297,22 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
   if (paso === "INICIO") {
     datos = { inicio: ctx.ahora };
     respuestas.push(M.saludo);
-    if (entrada.tipo === "texto" && /urgen|emergencia/.test(normalizar(entrada.texto))) respuestas.push(M.urgencia);
+    if (entrada.tipo === "texto" && /urgen|emergencia/.test(normalizar(entrada.texto))) {
+      respuestas.push(M.urgencia);
+      datos.avisoUrgencia = ctx.ahora;
+    }
     paso = "RECOLECTANDO";
     return fin();
   }
   // Flujo corto: el bot no escribe por iniciativa propia. Si el paciente deja de escribir media hora,
   // la conversación queda terminada; si vuelve a escribir (o pregunta por su proceso pasada la media
   // hora del saludo), se le responde una sola vez con lo que falta.
+  // Cada mensaje enviado cuenta para el límite mensual: el mismo aviso no se repite en media hora.
+  const avisar = (clave: "avisoUrgencia" | "avisoFormato", texto: string) => {
+    if (minutosDesde(datos[clave], ctx.ahora) < MINUTOS_ESPERA) return;
+    datos[clave] = ctx.ahora;
+    respuestas.push(texto);
+  };
   const silencio = minutosDesde(datos.ultimaEntrada ?? datos.inicio, ctx.ahora);
   const tocaResponder = (texto: string | null) =>
     minutosDesde(datos.recordado, ctx.ahora) >= MINUTOS_ESPERA &&
@@ -318,7 +330,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
     }
     if (/urgen|emergencia/.test(t)) {
       acciones.push({ tipo: "alerta", codigo: "POSIBLE_URGENCIA", detalle: "El paciente mencionó una urgencia o emergencia. El bot le indicó acudir a urgencias o llamar al 123. Contactarlo según el protocolo institucional." });
-      respuestas.push(M.urgencia);
+      avisar("avisoUrgencia", M.urgencia);
       return fin();
     }
     if (t === "nueva" || t === "nueva solicitud") {
@@ -352,7 +364,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
       const t = normalizar(entrada.texto);
       if (/urgen|emergencia/.test(t)) {
         acciones.push({ tipo: "alerta", codigo: "POSIBLE_URGENCIA", detalle: "El paciente mencionó una urgencia o emergencia. El bot le indicó acudir a urgencias o llamar al 123. Contactarlo según el protocolo institucional." });
-        respuestas.push(M.urgencia);
+        avisar("avisoUrgencia", M.urgencia);
         return fin();
       }
       if (/^(cancelar|ya no|no quiero continuar|desisto)$/.test(t)) {
@@ -365,7 +377,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
       const nombre = sol.nombre ? null : extraerNombre(entrada.texto);
       if (doc || nombre) act({ ...(doc ? { documento: doc } : {}), ...(nombre ? { nombre } : {}) });
     } else {
-      respuestas.push(entrada.tipo === "audio" ? M.audio : M.noSoportado);
+      avisar("avisoFormato", entrada.tipo === "audio" ? M.audio : M.noSoportado);
       return fin();
     }
     const estado = estadoRecoleccion(sol, ctx.documentos ?? [], ctx.campos ?? []);

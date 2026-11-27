@@ -29,7 +29,9 @@ describe("lectura de mensajes", () => {
         { id: "b", from: "573000000001", type: "image", image: { id: "img-1" } },
         { id: "c", from: "573000000001", type: "document", document: { id: "doc-1" } },
         { id: "d", from: "573000000001", type: "audio", audio: { id: "aud-1" } },
-        { id: "e", from: "573000000001", type: "sticker" },
+        { id: "e", from: "573000000001", type: "location" },
+        { id: "f", from: "573000000001", type: "sticker" },
+        { id: "g", from: "573000000001", type: "reaction" },
       ]),
       "111",
     );

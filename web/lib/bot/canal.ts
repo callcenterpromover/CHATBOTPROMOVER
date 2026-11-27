@@ -29,7 +29,21 @@ async function enviarWhatsApp(telefono: string, texto: string) {
   if (!r.ok) throw new Error(`meta_envio_${r.status}`);
 }
 
-export async function enviar(db: SupabaseClient, canal: Canal, telefono: string, textos: string[]) {
+const MAX_TEXTO = 4096; // límite de WhatsApp por mensaje
+
+/** Junta las respuestas de un turno en el menor número de mensajes (cada mensaje cuenta para el límite mensual). */
+export function agrupar(textos: string[]): string[] {
+  const salida: string[] = [];
+  for (const t of textos.map((x) => x.trim()).filter(Boolean)) {
+    const ultimo = salida.at(-1);
+    if (ultimo !== undefined && ultimo.length + 2 + t.length <= MAX_TEXTO) salida[salida.length - 1] = `${ultimo}\n\n${t}`;
+    else salida.push(t.slice(0, MAX_TEXTO));
+  }
+  return salida;
+}
+
+export async function enviar(db: SupabaseClient, canal: Canal, telefono: string, respuestas: string[]) {
+  const textos = agrupar(respuestas);
   if (!textos.length) return;
   if (canal === "simulador") {
     if (!modoSimulacion()) throw new Error("simulador_desactivado");

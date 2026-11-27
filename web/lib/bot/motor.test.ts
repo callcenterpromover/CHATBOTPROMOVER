@@ -460,4 +460,16 @@ describe("flujo corto: un saludo y el paciente envía todo", () => {
     const c = procesar(recolectando(1, { solicitudCreada: true }), texto("cancelar"), ctx());
     expect(c.estado.paso).toBe("FINAL");
   });
+
+  it("el mismo aviso (urgencia, audio) no se repite en media hora, pero la alerta sí se registra", () => {
+    const u1 = procesar(recolectando(1, { solicitudCreada: true }), texto("es urgente"), ctx());
+    const u2 = procesar(u1.estado, texto("urgente por favor"), ctx());
+    expect(u2.respuestas).toEqual([]);
+    expect(u2.acciones.some((a) => a.tipo === "alerta")).toBe(true);
+    const a1 = procesar(recolectando(1, { solicitudCreada: true }), { tipo: "audio" }, ctx());
+    expect(a1.respuestas).toEqual([M.audio]);
+    expect(procesar(a1.estado, { tipo: "audio" }, ctx()).respuestas).toEqual([]);
+    const tarde = { ...a1.estado, datos: { ...a1.estado.datos, avisoFormato: new Date(new Date(AHORA).getTime() - 31 * 60_000).toISOString() } };
+    expect(procesar(tarde, { tipo: "audio" }, ctx()).respuestas).toEqual([M.audio]);
+  });
 });
