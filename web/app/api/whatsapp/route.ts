@@ -4,8 +4,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { botActivo } from "@/lib/bot/estado";
 import { claveLimite, dentroDelLimite } from "@/lib/limites";
-import { manejarEntrada } from "@/lib/bot/servicio";
+import { manejarEntrada, origenDeFallo } from "@/lib/bot/servicio";
 import { extraerMensajes, firmaValida } from "@/lib/bot/whatsapp";
+import { registrarError } from "@/lib/registro-errores";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
   const cuerpo = await request.text();
   if (cuerpo.length > MAX_CUERPO) return new NextResponse("Demasiado grande", { status: 413 });
   if (!firmaValida(cuerpo, request.headers.get("x-hub-signature-256"), process.env.META_APP_SECRET)) {
+    await registrarError("webhook", "meta_firma_invalida");
     return new NextResponse("Firma inválida", { status: 401 });
   }
 
@@ -41,7 +43,10 @@ export async function POST(request: NextRequest) {
 
   const db = crearClienteAdmin();
   // Bot pausado por un super_admin: se confirma la entrega (sin reintentos) y no se responde ni se guarda nada.
-  if (!(await botActivo(db))) return NextResponse.json({ ok: true, pausado: true });
+  if (!(await botActivo(db))) {
+    await registrarError("webhook", "bot_pausado", "Recibido por la ruta de Meta directo.");
+    return NextResponse.json({ ok: true, pausado: true });
+  }
   for (const m of extraerMensajes(json, process.env.META_PHONE_NUMBER_ID)) {
     // Meta reintenta: cada mensaje se procesa una sola vez.
     const { data: nuevo } = await db
@@ -57,7 +62,8 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       // Se libera el ID para que el reintento de Meta lo procese. Sin datos del paciente en el log.
       await db.from("mensajes_procesados").delete().eq("id", m.id);
-      console.error("webhook_fallo", e instanceof Error ? e.message : "desconocido");
+      const codigo = e instanceof Error ? e.message : "desconocido";
+      await registrarError(origenDeFallo(codigo), codigo, "Meta reintentará el mensaje.");
       return new NextResponse("Error", { status: 500 });
     }
   }

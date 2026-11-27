@@ -60,6 +60,16 @@ export function extraerMensajesKapso(cuerpo: unknown, numeroId: string | undefin
   return salida;
 }
 
+/** IDs de número (phone_number_id) que trae el evento; sirven para diagnosticar una configuración errada. */
+export function numerosDelEvento(cuerpo: unknown): string[] {
+  const raiz = cuerpo as { batch?: boolean; data?: unknown[] } & EventoKapso;
+  const eventos: EventoKapso[] = raiz?.batch && Array.isArray(raiz.data) ? (raiz.data as EventoKapso[]) : [raiz];
+  const ids = eventos
+    .map((ev) => ev?.phone_number_id ?? ev?.conversation?.phone_number_id)
+    .filter((n): n is string => typeof n === "string" && /^\d{5,30}$/.test(n));
+  return [...new Set(ids)];
+}
+
 /** Envía un texto por el proxy de Meta de Kapso. */
 export async function enviarPorKapso(telefono: string, texto: string) {
   const clave = process.env.KAPSO_API_KEY;

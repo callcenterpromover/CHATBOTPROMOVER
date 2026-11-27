@@ -8,7 +8,7 @@
 import { franjasPara, opcionesPaciente, serviciosPara, type Catalogo, type ServicioCita } from "../horarios";
 import { claseServicio, diasDesde, DIAS_MAX_INASISTENCIA, interpretarUltimaAsistencia, requiereHistoria, requiereOps } from "./flujo";
 import { M } from "./mensajes";
-import { MINUTOS_ESPERA, enumerar, esPreguntaDeEstado, estadoRecoleccion, extraerDocumento, extraerNombre, minutosDesde, type DocumentoRecibido } from "./recoleccion";
+import { MINUTOS_ESPERA, enumerar, esPreguntaDeEstado, estadoRecoleccion, extraerDocumento, extraerNombre, minutosDesde, type CampoLeido, type DocumentoRecibido } from "./recoleccion";
 
 export type Canal = "whatsapp" | "simulador";
 
@@ -99,8 +99,8 @@ export type SolicitudContexto = {
 } | null;
 
 /** `catalogo` viene del panel Agendas; sin él (o sin servicios) el bot pide servicio y horario en texto libre. */
-/** `documentos`: lo que ya se recibió para la solicitud (flujo corto). */
-export type Contexto = { ahora: string; solicitud: SolicitudContexto; catalogo?: Catalogo | null; documentos?: DocumentoRecibido[] };
+/** `documentos`: lo que ya se recibió para la solicitud (flujo corto); `campos`: lo que el OCR leyó de ellos. */
+export type Contexto = { ahora: string; solicitud: SolicitudContexto; catalogo?: Catalogo | null; documentos?: DocumentoRecibido[]; campos?: CampoLeido[] };
 
 export type Resultado = { estado: Estado; respuestas: string[]; acciones: Accion[] };
 
@@ -368,7 +368,7 @@ export function procesar(estado: Estado, entrada: Entrada, ctx: Contexto): Resul
       respuestas.push(entrada.tipo === "audio" ? M.audio : M.noSoportado);
       return fin();
     }
-    const estado = estadoRecoleccion(sol, ctx.documentos ?? []);
+    const estado = estadoRecoleccion(sol, ctx.documentos ?? [], ctx.campos ?? []);
     if (estado.tipo === "COMPLETA") {
       paso = "FINAL";
       datos.completa = true;

@@ -13,17 +13,29 @@ import { BarraLateral, CajonNavegacion, type GrupoNav } from "./shell/navegacion
 // Estructura del panel (docs/superpowers/specs/2026-11-24-rediseno-interfaz.md): barra lateral con el
 // trabajo (colas), el seguimiento y la configuración; barra superior con ubicación, «ir a solicitud»,
 // estado del bot y menú de usuario.
+function haceUnDia() {
+  return new Date(Date.now() - 86_400_000).toISOString();
+}
+
 export default async function LayoutPanel({ children }: LayoutProps<"/">) {
   const { supabase, user, operador } = await requerirSesion();
   const admin = esAdmin(operador?.rol);
   const superAdmin = operador?.rol === "super_admin";
 
-  const [{ data: bot }, { data: asignaciones }, almacen] = await Promise.all([
+  const [{ data: bot }, { data: asignaciones }, almacen, { count: erroresAbiertos }] = await Promise.all([
     superAdmin
       ? supabase.from("configuracion_bot").select("activo").eq("id", 1).maybeSingle()
       : Promise.resolve({ data: null }),
     operador ? supabase.from("solicitudes").select("asignado_a") : Promise.resolve({ data: [] }),
     cookies(),
+    // Errores sin revisar en las últimas 24 h (si la tabla aún no existe, el conteo queda vacío).
+    superAdmin
+      ? supabase
+          .from("registro_errores")
+          .select("id", { count: "exact", head: true })
+          .eq("revisado", false)
+          .gte("ultimo_en", haceUnDia())
+      : Promise.resolve({ count: null }),
   ]);
   const todas = (asignaciones ?? []) as { asignado_a: string | null }[];
   const conteo = {
@@ -65,6 +77,9 @@ export default async function LayoutPanel({ children }: LayoutProps<"/">) {
                     ],
                   },
                   { href: "/admin/usuarios", texto: "Usuarios", icono: "personas" as const, coincide: { ruta: "/admin/usuarios" } },
+                  ...(superAdmin
+                    ? [{ href: "/admin/errores", texto: "Registro de errores", icono: "alerta" as const, conteo: erroresAbiertos || undefined, coincide: { ruta: "/admin/errores" } }]
+                    : []),
                 ],
               },
             ]

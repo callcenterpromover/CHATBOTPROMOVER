@@ -6,32 +6,97 @@ export const MINUTOS_ESPERA = 30;
 
 export type DocumentoRecibido = { tipo_documento: string; estado: string };
 export type DatosRecoleccion = { documento?: string | null; nombre?: string | null };
+/** Campo que el OCR leyó de un documento (tabla campos_extraidos). */
+export type CampoLeido = { campo: string; confianza: string | null; valor_ocr?: string | null };
 
+// Palabras que nunca forman parte de un nombre. Si una línea sin marcador («me llamo…») contiene
+// alguna, no se toma como nombre: es mejor dejar el nombre sin leer que guardar uno falso.
 const PALABRAS_VACIAS = new Set([
-  "hola", "buenas", "buenos", "buen", "dia", "dias", "tarde", "tardes", "noche", "noches", "gracias", "cita", "citas",
-  "quiero", "necesito", "solicito", "solicitar", "una", "un", "por", "favor", "mi", "nombre", "es", "cedula", "cc", "c",
-  "documento", "numero", "soy", "me", "llamo", "el", "la", "de", "del", "paciente", "se", "y", "con", "para", "terapia",
-  "terapias", "orden", "historia", "clinica", "adjunto", "envio", "aqui", "esta", "estan", "ok", "listo", "si", "no",
+  "hola", "buenas", "buenos", "buen", "dia", "dias", "tarde", "tardes", "noche", "noches", "gracias", "muchas",
+  "cita", "citas", "quiero", "quisiera", "necesito", "solicito", "solicitar", "agendar", "agenda", "pedir", "una", "un",
+  "por", "favor", "porfa", "porfavor", "mi", "mis", "su", "sus", "nombre", "completo", "es", "cedula", "cc", "ti", "c",
+  "documento", "documentos", "numero", "soy", "me", "te", "le", "lo", "les", "llamo", "el", "se", "y", "o", "con",
+  "para", "en", "al", "a", "que", "cual", "cuanto", "cuando", "como", "donde", "ya", "mas", "pero", "tengo", "tiene",
+  "paciente", "terapia", "terapias", "fisioterapia", "fisica", "ocupacional", "lenguaje", "valoracion", "control",
+  "orden", "medica", "historia", "clinica", "plan", "tratamiento", "autorizacion", "eps", "foto", "fotos", "pdf",
+  "adjunto", "adjunta", "adjuntos", "envio", "envie", "enviar", "envia", "mando", "aqui", "aca", "ahi", "esta", "estan",
+  "este", "esto", "ok", "listo", "lista", "si", "no", "bien", "vale", "perfecto", "claro", "todo", "nada", "nueva",
+  "cancelar", "urgente", "ayuda", "informacion", "demora", "mama", "papa", "hijo", "hija", "esposo", "esposa",
+  "senor", "senora", "sr", "sra", "puedo", "puede", "pueden", "celular", "telefono", "cel", "tel", "whatsapp",
 ]);
+// Partículas que van dentro de un nombre («María de los Ángeles»), nunca al principio ni al final.
+const CONECTORES = new Set(["de", "del", "la", "las", "los", "san"]);
+const SALUDO_INICIAL = /^(?:(?:hola|buenas|buenos|buen|dias?|tardes?|noches?)[\s,.!¡]*)+/u;
+const MARCADOR_NOMBRE = /(?:me llamo|mi nombre(?: completo)? es|nombre(?: completo)?(?: del paciente)?\s*(?:es|[:=])|el paciente es|paciente\s*[:=]|soy)\s+(.+)/u;
 
 const sinTildes = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "");
+const clave = (p: string) => sinTildes(p).toLowerCase();
+const capitalizar = (p: string) =>
+  CONECTORES.has(clave(p)) ? p.toLowerCase() : p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 
-/** Número de documento escrito en el texto (6 a 11 dígitos, con o sin puntos). */
+// Antes de un número, estas palabras dicen que no es la cédula (celular, orden, autorización…).
+const NO_ES_CEDULA = /(?:cel|celular|tel|telefono|whatsapp|contacto|orden|autorizacion|radicado|nit|historia|edad)\W*(?:\w+\W+){0,2}$/;
+
+/** Número de cédula escrito en el texto (6 a 11 dígitos, con o sin puntos o espacios).
+ *  No toma celulares (10 dígitos que empiezan por 3) ni números que el texto presenta como otra cosa. */
 export function extraerDocumento(texto: string): string | null {
-  const m = texto.match(/(?<![\d.])(\d{1,3}(?:[.\s]\d{3}){1,3}|\d{6,11})(?![\d.])/);
-  if (!m) return null;
-  const digitos = m[1].replace(/\D/g, "");
-  return digitos.length >= 6 && digitos.length <= 11 ? digitos : null;
+  const re = /(?<![\d.])(\d{1,3}(?:[.\s]\d{3}){1,3}|\d{6,11})(?![\d.])/g;
+  for (const m of texto.matchAll(re)) {
+    const digitos = m[1].replace(/\D/g, "");
+    if (digitos.length < 6 || digitos.length > 11) continue;
+    if (digitos.length === 10 && digitos.startsWith("3")) continue; // celular colombiano
+    const antes = clave(texto.slice(0, m.index).split(/[\n,;\d]/).at(-1) ?? ""); // desde el número o la coma anterior
+    if (NO_ES_CEDULA.test(antes)) continue;
+    return digitos;
+  }
+  return null;
 }
 
-/** Nombre completo escrito en el texto: lo que queda sin números ni palabras de saludo, si son 2 a 6 palabras. */
+/** Palabras (solo letras) de un trozo de texto, sin números ni la sigla «CC». */
+function palabras(trozo: string): string[] | null {
+  const ps = trozo.replace(/[\d.,;:!¡()"'*_/-]+/g, " ").split(/\s+/).filter(Boolean);
+  return ps.every((p) => /^\p{L}+$/u.test(p)) ? ps : null;
+}
+
+/** 2 a 6 palabras de nombre; los conectores solo en medio. */
+function comoNombre(ps: string[]): string | null {
+  const reales = ps.filter((p) => !CONECTORES.has(clave(p)));
+  if (reales.length < 2 || reales.length > 6 || reales.some((p) => p.length < 2)) return null;
+  if (CONECTORES.has(clave(ps[0])) || CONECTORES.has(clave(ps.at(-1)!))) return null;
+  return ps.map(capitalizar).join(" ");
+}
+
+/** Nombre completo escrito en el texto, por línea:
+ *  - después de «me llamo», «mi nombre es», «nombre:», «soy»…: las palabras que siguen, hasta la primera que no es de nombre;
+ *  - sin marcador: solo si la línea es únicamente un nombre (quitando saludo inicial y cédula).
+ *  Ante la duda devuelve null: el equipo completa el nombre en el panel. */
 export function extraerNombre(texto: string): string | null {
-  const palabras = texto
-    .replace(/[\d.,;:!?¡¿()"'*_/-]+/g, " ")
-    .split(/\s+/)
-    .filter((p) => p && /^[\p{L}]+$/u.test(p) && !PALABRAS_VACIAS.has(sinTildes(p).toLowerCase()));
-  if (palabras.length < 2 || palabras.length > 6 || palabras.some((p) => p.length < 2)) return null;
-  return palabras.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
+  const lineas = texto.normalize("NFC").split(/[\n;]+/).map((l) => l.trim()).filter(Boolean);
+  for (const linea of lineas) {
+    const m = clave(linea).match(MARCADOR_NOMBRE);
+    if (m) {
+      // Se toma el texto original (con tildes) en la misma posición que la coincidencia.
+      const resto = linea.slice(linea.length - m[1].length);
+      const ps: string[] = [];
+      for (const p of resto.split(/[\s,.!?¡¿]+/).filter(Boolean)) {
+        if (/\d/.test(p) || /^c\.?c\.?$/i.test(p)) break;
+        if (!/^\p{L}+$/u.test(p) || PALABRAS_VACIAS.has(clave(p))) break;
+        ps.push(p);
+      }
+      while (ps.length && CONECTORES.has(clave(ps.at(-1)!))) ps.pop();
+      const n = comoNombre(ps);
+      if (n) return n;
+      continue;
+    }
+    if (/[?¿]/.test(linea)) continue;
+    const sinSaludo = linea.slice(clave(linea).match(SALUDO_INICIAL)?.[0].length ?? 0);
+    const sinCedula = sinSaludo.replace(/\b(?:c\.?\s?c\.?|cedula|cédula)\b\.?:?/giu, " ");
+    const ps = palabras(sinCedula);
+    if (!ps || ps.some((p) => PALABRAS_VACIAS.has(clave(p)))) continue;
+    const n = comoNombre(ps);
+    if (n) return n;
+  }
+  return null;
 }
 
 export type Estado =
@@ -41,9 +106,16 @@ export type Estado =
   | { tipo: "FALTAN"; faltan: string[] };
 
 /** ¿Llegó todo? Completa = documento + nombre + (plan de tratamiento) o (orden + historia).
- *  Nunca dice que falta un documento si hay alguno que el sistema no pudo identificar. */
-export function estadoRecoleccion(d: DatosRecoleccion, docs: DocumentoRecibido[]): Estado {
-  const faltanDatos = [...(d.documento ? [] : ["el número de cédula"]), ...(d.nombre ? [] : ["el nombre completo"])];
+ *  La cédula y el nombre cuentan si el paciente los escribió o si el OCR los leyó de un documento
+ *  con confianza media o alta (el equipo verifica en el panel). Nunca dice que falta un documento
+ *  si hay alguno que el sistema no pudo identificar. */
+export function estadoRecoleccion(d: DatosRecoleccion, docs: DocumentoRecibido[], campos: CampoLeido[] = []): Estado {
+  const leidoDe = (campo: string) =>
+    campos.some((c) => c.campo === campo && c.confianza !== "BAJA" && (c.valor_ocr === undefined || !!c.valor_ocr?.trim()));
+  const faltanDatos = [
+    ...(d.documento || leidoDe("DOCUMENTO") ? [] : ["el número de cédula"]),
+    ...(d.nombre || leidoDe("NOMBRE") ? [] : ["el nombre completo"]),
+  ];
   const leidos = docs.filter((x) => x.estado === "COMPLETADO");
   const tipos = new Set(leidos.map((x) => x.tipo_documento));
   const docsOk = tipos.has("PLAN") || (tipos.has("ORDEN") && tipos.has("HISTORIA"));

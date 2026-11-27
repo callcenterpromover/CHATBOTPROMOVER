@@ -7,7 +7,7 @@ import { crearClienteAdmin } from "@/lib/supabase/admin";
 import { enviar } from "./canal";
 import { botActivo } from "./estado";
 import { M } from "./mensajes";
-import { estadoRecoleccion, type DocumentoRecibido } from "./recoleccion";
+import { estadoRecoleccion, type CampoLeido, type DocumentoRecibido } from "./recoleccion";
 import { ESTADO_INICIAL, procesar, type Accion, type Canal, type Datos, type Entrada, type Estado, type Paso } from "./motor";
 
 const MAX_DOCUMENTOS_POR_SOLICITUD = 30;
@@ -103,6 +103,11 @@ async function aplicar(
 }
 
 /** Procesa un mensaje entrante del paciente y envía las respuestas. */
+/** ¿El fallo fue al enviar la respuesta (proveedor o configuración) o dentro del bot (base de datos)? */
+export function origenDeFallo(codigo: string): "envio" | "bot" {
+  return /_envio_|^falta_configuracion_(kapso|meta)$/.test(codigo) ? "envio" : "bot";
+}
+
 export async function manejarEntrada(telefono: string, entrada: Entrada, canal: Canal) {
   const db = crearClienteAdmin();
   await limpiarAntiguos(db);
@@ -112,9 +117,14 @@ export async function manejarEntrada(telefono: string, entrada: Entrada, canal: 
 
   let solicitud = null;
   let documentos: DocumentoRecibido[] = [];
+  let campos: CampoLeido[] = [];
   if (conv?.solicitud_id) {
-    const { data: docs } = await db.from("trabajos_ocr").select("tipo_documento, estado").eq("solicitud_id", conv.solicitud_id);
+    const [{ data: docs }, { data: cs }] = await Promise.all([
+      db.from("trabajos_ocr").select("tipo_documento, estado").eq("solicitud_id", conv.solicitud_id),
+      db.from("campos_extraidos").select("campo, confianza, valor_ocr").eq("solicitud_id", conv.solicitud_id).in("campo", ["DOCUMENTO", "NOMBRE"]),
+    ]);
     documentos = (docs ?? []) as DocumentoRecibido[];
+    campos = (cs ?? []) as CampoLeido[];
     const { data } = await db
       .from("solicitudes")
       .select("documento, nombre, eps, eps_texto, servicio_texto, servicio_cita_id, edad, historia_estado")
@@ -125,7 +135,7 @@ export async function manejarEntrada(telefono: string, entrada: Entrada, canal: 
 
   // Sin catálogo (error de lectura) el bot sigue funcionando con servicio y horario en texto libre.
   const catalogo = await cargarCatalogo(db);
-  const r = procesar(estado, entrada, { ahora: new Date().toISOString(), solicitud, catalogo, documentos });
+  const r = procesar(estado, entrada, { ahora: new Date().toISOString(), solicitud, catalogo, documentos, campos });
   const datos: Datos = { ...r.estado.datos, canal };
 
   const solicitudId = await aplicar(db, r.acciones, conv?.solicitud_id ?? null, telefono, datos);
@@ -175,11 +185,12 @@ export async function avisarDocumentoProcesado(trabajoId: number) {
   let texto: string | null = null;
   // Flujo corto: si con este documento ya llegó todo, se le avisa al paciente y la conversación termina.
   if (conv.paso === "RECOLECTANDO" && trabajo.estado !== "REENVIO_REQUERIDO") {
-    const [{ data: s }, { data: docs }] = await Promise.all([
+    const [{ data: s }, { data: docs }, { data: cs }] = await Promise.all([
       db.from("solicitudes").select("documento, nombre").eq("id", trabajo.solicitud_id).maybeSingle(),
       db.from("trabajos_ocr").select("tipo_documento, estado").eq("solicitud_id", trabajo.solicitud_id),
+      db.from("campos_extraidos").select("campo, confianza, valor_ocr").eq("solicitud_id", trabajo.solicitud_id).in("campo", ["DOCUMENTO", "NOMBRE"]),
     ]);
-    if (estadoRecoleccion(s ?? {}, (docs ?? []) as DocumentoRecibido[]).tipo === "COMPLETA") {
+    if (estadoRecoleccion(s ?? {}, (docs ?? []) as DocumentoRecibido[], (cs ?? []) as CampoLeido[]).tipo === "COMPLETA") {
       texto = M.recibidoTodo;
       await db.from("conversaciones").update({ paso: "FINAL", datos: { ...(conv.datos ?? {}), completa: true, recordado: new Date().toISOString() }, actualizado_en: new Date().toISOString() }).eq("solicitud_id", trabajo.solicitud_id);
     }
