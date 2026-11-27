@@ -9,11 +9,12 @@ alter table public.configuracion_bot
   add column ocr_activo boolean not null default true,
   add column simulacion boolean not null default false;
 
+-- Mantiene todas las acciones anteriores (hasta 20261127000000_registro_errores.sql) y agrega dos.
 alter table public.auditoria drop constraint auditoria_accion_check;
 alter table public.auditoria add constraint auditoria_accion_check check (accion in (
   'CERRAR_SOLICITUD', 'EXPORTAR_LISTA', 'TOMAR_SOLICITUD', 'DEVOLVER_SOLICITUD',
-  'ASIGNAR_SOLICITUD', 'GESTION_USUARIO', 'CAMBIAR_ESTADO_BOT', 'CAMBIAR_ESTADO_OCR',
-  'CAMBIAR_MODO_SIMULACION'));
+  'ASIGNAR_SOLICITUD', 'GESTION_USUARIO', 'CAMBIAR_ESTADO_BOT', 'GESTION_AGENDAS', 'REVISAR_ERRORES',
+  'CAMBIAR_ESTADO_OCR', 'CAMBIAR_MODO_SIMULACION'));
 
 create function public.cambiar_configuracion(p_clave text, p_valor boolean)
 returns boolean
