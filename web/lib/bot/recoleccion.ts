@@ -6,6 +6,8 @@ export const MINUTOS_ESPERA = 30;
 
 export type DocumentoRecibido = { tipo_documento: string; estado: string };
 export type DatosRecoleccion = { documento?: string | null; nombre?: string | null };
+/** Campo que el OCR leyó de un documento (tabla campos_extraidos). */
+export type CampoLeido = { campo: string; confianza: string | null; valor_ocr?: string | null };
 
 // Palabras que nunca forman parte de un nombre. Si una línea sin marcador («me llamo…») contiene
 // alguna, no se toma como nombre: es mejor dejar el nombre sin leer que guardar uno falso.
@@ -104,9 +106,16 @@ export type Estado =
   | { tipo: "FALTAN"; faltan: string[] };
 
 /** ¿Llegó todo? Completa = documento + nombre + (plan de tratamiento) o (orden + historia).
- *  Nunca dice que falta un documento si hay alguno que el sistema no pudo identificar. */
-export function estadoRecoleccion(d: DatosRecoleccion, docs: DocumentoRecibido[]): Estado {
-  const faltanDatos = [...(d.documento ? [] : ["el número de cédula"]), ...(d.nombre ? [] : ["el nombre completo"])];
+ *  La cédula y el nombre cuentan si el paciente los escribió o si el OCR los leyó de un documento
+ *  con confianza media o alta (el equipo verifica en el panel). Nunca dice que falta un documento
+ *  si hay alguno que el sistema no pudo identificar. */
+export function estadoRecoleccion(d: DatosRecoleccion, docs: DocumentoRecibido[], campos: CampoLeido[] = []): Estado {
+  const leidoDe = (campo: string) =>
+    campos.some((c) => c.campo === campo && c.confianza !== "BAJA" && (c.valor_ocr === undefined || !!c.valor_ocr?.trim()));
+  const faltanDatos = [
+    ...(d.documento || leidoDe("DOCUMENTO") ? [] : ["el número de cédula"]),
+    ...(d.nombre || leidoDe("NOMBRE") ? [] : ["el nombre completo"]),
+  ];
   const leidos = docs.filter((x) => x.estado === "COMPLETADO");
   const tipos = new Set(leidos.map((x) => x.tipo_documento));
   const docsOk = tipos.has("PLAN") || (tipos.has("ORDEN") && tipos.has("HISTORIA"));

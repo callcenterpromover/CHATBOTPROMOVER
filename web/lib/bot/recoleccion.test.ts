@@ -39,6 +39,15 @@ describe("¿llegó todo?", () => {
     expect(estadoRecoleccion(ok, [{ tipo_documento: "ORDEN", estado: "COMPLETADO" }, { tipo_documento: "HISTORIA", estado: "COMPLETADO" }]).tipo).toBe("COMPLETA");
     expect(estadoRecoleccion(ok, [{ tipo_documento: "PLAN", estado: "COMPLETADO" }]).tipo).toBe("COMPLETA");
   });
+  it("la cédula y el nombre leídos de la orden cuentan como recibidos", () => {
+    const docs = [{ tipo_documento: "PLAN", estado: "COMPLETADO" }];
+    const campos = [{ campo: "DOCUMENTO", confianza: "ALTA", valor_ocr: "1000000020" }, { campo: "NOMBRE", confianza: "MEDIA", valor_ocr: "ANA PRUEBA" }];
+    expect(estadoRecoleccion({}, docs, campos).tipo).toBe("COMPLETA");
+  });
+  it("un dato leído con confianza baja no cuenta", () => {
+    const e = estadoRecoleccion({ documento: "1" }, [{ tipo_documento: "PLAN", estado: "COMPLETADO" }], [{ campo: "NOMBRE", confianza: "BAJA", valor_ocr: "A?A" }]);
+    expect(e).toMatchObject({ tipo: "FALTAN", faltan: ["el nombre completo"] });
+  });
   it("mientras se leen documentos no dice qué falta", () => {
     expect(estadoRecoleccion(ok, [{ tipo_documento: "DESCONOCIDO", estado: "PENDIENTE" }]).tipo).toBe("LEYENDO");
   });
