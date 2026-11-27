@@ -6,7 +6,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { botActivo } from "@/lib/bot/estado";
 import { claveLimite, dentroDelLimite } from "@/lib/limites";
 import { extraerMensajesKapso, firmaKapsoValida, numerosDelEvento } from "@/lib/bot/kapso";
-import { manejarEntrada } from "@/lib/bot/servicio";
+import { manejarEntrada, origenDeFallo } from "@/lib/bot/servicio";
+import { finalDe, registrarError } from "@/lib/registro-errores";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
 
   if (!firmaKapsoValida(cuerpo, request.headers.get("x-webhook-signature"), process.env.KAPSO_WEBHOOK_SECRET)) {
     // Sin secreto configurado o con otro secreto, ningún mensaje pasa: se deja la causa en el registro.
-    console.warn("kapso_webhook_rechazado", process.env.KAPSO_WEBHOOK_SECRET ? "firma_invalida" : "falta_KAPSO_WEBHOOK_SECRET");
+    await registrarError("webhook", process.env.KAPSO_WEBHOOK_SECRET ? "firma_invalida" : "falta_KAPSO_WEBHOOK_SECRET");
     return new NextResponse("Firma inválida", { status: 401 });
   }
 
@@ -36,13 +37,14 @@ export async function POST(request: NextRequest) {
   try {
     json = JSON.parse(cuerpo);
   } catch {
+    await registrarError("webhook", "json_invalido");
     return new NextResponse("JSON inválido", { status: 400 });
   }
 
   const db = crearClienteAdmin();
   // Bot pausado por un super_admin: se confirma la entrega (sin reintentos) y no se responde ni se guarda nada.
   if (!(await botActivo(db))) {
-    console.warn("kapso_webhook_bot_pausado");
+    await registrarError("webhook", "bot_pausado");
     return NextResponse.json({ ok: true, pausado: true });
   }
   const mensajes = extraerMensajesKapso(json, process.env.KAPSO_PHONE_NUMBER_ID);
@@ -55,7 +57,9 @@ export async function POST(request: NextRequest) {
       : numeros.length && !numeros.includes(configurado)
         ? "phone_number_id_distinto"
         : "sin_mensajes_entrantes";
-    console.warn("kapso_webhook_sin_mensajes", motivo, numeros.join(","));
+    if (motivo !== "sin_mensajes_entrantes") {
+      await registrarError("webhook", motivo, `Llegó el ID de número ${numeros.map(finalDe).join(", ") || "ninguno"}; configurado: ${finalDe(configurado)}.`);
+    }
     return NextResponse.json({ ok: true, procesados: 0, motivo });
   }
   let procesados = 0;
@@ -68,7 +72,7 @@ export async function POST(request: NextRequest) {
       .select("id");
     if (errorRegistro) {
       // Sin este registro no se puede evitar procesar dos veces: se pide a Kapso que reintente.
-      console.error("kapso_webhook_fallo", "registro_mensaje", errorRegistro.code ?? "");
+      await registrarError("webhook", "registro_mensaje", errorRegistro.code ?? null);
       return new NextResponse("Error", { status: 500 });
     }
     if (!nuevo?.length) {
@@ -77,7 +81,7 @@ export async function POST(request: NextRequest) {
     }
     // Inundación desde un mismo número: más de 30 mensajes en 5 minutos se ignoran.
     if (!(await dentroDelLimite(claveLimite("wa", m.telefono), 30, 300))) {
-      console.warn("kapso_webhook_limite_superado");
+      await registrarError("webhook", "limite_superado");
       continue;
     }
 
@@ -86,7 +90,8 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       // Se libera el ID para que el reintento lo procese. Sin datos del paciente en el registro.
       await db.from("mensajes_procesados").delete().eq("id", clave);
-      console.error("kapso_webhook_fallo", e instanceof Error ? e.message : "desconocido");
+      const codigo = e instanceof Error ? e.message : "desconocido";
+      await registrarError(origenDeFallo(codigo), codigo, "Kapso reintentará el mensaje.");
       return new NextResponse("Error", { status: 500 });
     }
     procesados++;

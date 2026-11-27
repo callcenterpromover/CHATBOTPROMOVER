@@ -3,7 +3,8 @@
 
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { avisarDocumentoProcesado } from "@/lib/bot/servicio";
+import { avisarDocumentoProcesado, origenDeFallo } from "@/lib/bot/servicio";
+import { registrarError } from "@/lib/registro-errores";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,8 @@ export async function POST(request: NextRequest) {
   try {
     return NextResponse.json({ resultado: await avisarDocumentoProcesado(id) });
   } catch (e) {
-    console.error("aviso_fallo", e instanceof Error ? e.message : "desconocido");
+    const codigo = e instanceof Error ? e.message : "desconocido";
+    await registrarError(origenDeFallo(codigo), codigo, "Al avisar un documento procesado por el OCR.");
     return new NextResponse("Error", { status: 500 });
   }
 }

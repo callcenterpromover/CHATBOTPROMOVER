@@ -60,6 +60,18 @@ class Cola:
         r.raise_for_status()
         return estado
 
+    def registrar_error(self, codigo: str, detalle: str | None = None) -> None:
+        """Deja el error en el «Registro de errores» del panel. Solo códigos técnicos, sin datos de
+        pacientes. Si falla (sin conexión, migración no aplicada) no interrumpe el trabajo."""
+        try:
+            self.http.post(
+                "/rpc/registrar_error",
+                json={"p_origen": "worker", "p_codigo": codigo[:80], "p_detalle": (detalle or "")[:300] or None},
+                timeout=10,
+            )
+        except httpx.HTTPError:
+            pass
+
     def recuperar_interrumpidos(self) -> None:
         """Al arrancar: trabajos que quedaron EN_PROCESO por un apagón vuelven a la cola."""
         r = self.http.patch(
