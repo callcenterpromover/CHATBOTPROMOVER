@@ -5,7 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { botActivo } from "@/lib/bot/estado";
 import { claveLimite, dentroDelLimite } from "@/lib/limites";
-import { extraerMensajesKapso, firmaKapsoValida } from "@/lib/bot/kapso";
+import { extraerMensajesKapso, firmaKapsoValida, numerosDelEvento } from "@/lib/bot/kapso";
 import { manejarEntrada } from "@/lib/bot/servicio";
 import { crearClienteAdmin } from "@/lib/supabase/admin";
 
@@ -20,12 +20,17 @@ export async function POST(request: NextRequest) {
   if (cuerpo.length > MAX_CUERPO) return new NextResponse("Demasiado grande", { status: 413 });
 
   if (!firmaKapsoValida(cuerpo, request.headers.get("x-webhook-signature"), process.env.KAPSO_WEBHOOK_SECRET)) {
+    // Sin secreto configurado o con otro secreto, ningún mensaje pasa: se deja la causa en el registro.
+    console.warn("kapso_webhook_rechazado", process.env.KAPSO_WEBHOOK_SECRET ? "firma_invalida" : "falta_KAPSO_WEBHOOK_SECRET");
     return new NextResponse("Firma inválida", { status: 401 });
   }
 
   // Solo interesan los mensajes entrantes; otros eventos se confirman y se ignoran.
   const evento = request.headers.get("x-webhook-event");
-  if (evento && evento !== "whatsapp.message.received") return NextResponse.json({ ok: true, ignorado: evento });
+  if (evento && evento !== "whatsapp.message.received") {
+    console.info("kapso_webhook_evento_ignorado", evento.slice(0, 60));
+    return NextResponse.json({ ok: true, ignorado: evento });
+  }
 
   let json: unknown;
   try {
@@ -36,17 +41,45 @@ export async function POST(request: NextRequest) {
 
   const db = crearClienteAdmin();
   // Bot pausado por un super_admin: se confirma la entrega (sin reintentos) y no se responde ni se guarda nada.
-  if (!(await botActivo(db))) return NextResponse.json({ ok: true, pausado: true });
-  for (const m of extraerMensajesKapso(json, process.env.KAPSO_PHONE_NUMBER_ID)) {
+  if (!(await botActivo(db))) {
+    console.warn("kapso_webhook_bot_pausado");
+    return NextResponse.json({ ok: true, pausado: true });
+  }
+  const mensajes = extraerMensajesKapso(json, process.env.KAPSO_PHONE_NUMBER_ID);
+  if (!mensajes.length) {
+    // Lo más común: KAPSO_PHONE_NUMBER_ID no coincide con el número que envía Kapso, o falta.
+    const numeros = numerosDelEvento(json);
+    const configurado = process.env.KAPSO_PHONE_NUMBER_ID;
+    const motivo = !configurado
+      ? "falta_KAPSO_PHONE_NUMBER_ID"
+      : numeros.length && !numeros.includes(configurado)
+        ? "phone_number_id_distinto"
+        : "sin_mensajes_entrantes";
+    console.warn("kapso_webhook_sin_mensajes", motivo, numeros.join(","));
+    return NextResponse.json({ ok: true, procesados: 0, motivo });
+  }
+  let procesados = 0;
+  for (const m of mensajes) {
     // Kapso reintenta: cada mensaje se procesa una sola vez.
     const clave = `kapso:${m.id}`;
-    const { data: nuevo } = await db
+    const { data: nuevo, error: errorRegistro } = await db
       .from("mensajes_procesados")
       .upsert({ id: clave }, { onConflict: "id", ignoreDuplicates: true })
       .select("id");
-    if (!nuevo?.length) continue;
+    if (errorRegistro) {
+      // Sin este registro no se puede evitar procesar dos veces: se pide a Kapso que reintente.
+      console.error("kapso_webhook_fallo", "registro_mensaje", errorRegistro.code ?? "");
+      return new NextResponse("Error", { status: 500 });
+    }
+    if (!nuevo?.length) {
+      console.info("kapso_webhook_duplicado");
+      continue;
+    }
     // Inundación desde un mismo número: más de 30 mensajes en 5 minutos se ignoran.
-    if (!(await dentroDelLimite(claveLimite("wa", m.telefono), 30, 300))) continue;
+    if (!(await dentroDelLimite(claveLimite("wa", m.telefono), 30, 300))) {
+      console.warn("kapso_webhook_limite_superado");
+      continue;
+    }
 
     try {
       await manejarEntrada(m.telefono, m.entrada, "whatsapp");
@@ -56,6 +89,7 @@ export async function POST(request: NextRequest) {
       console.error("kapso_webhook_fallo", e instanceof Error ? e.message : "desconocido");
       return new NextResponse("Error", { status: 500 });
     }
+    procesados++;
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, procesados });
 }

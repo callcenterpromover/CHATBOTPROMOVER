@@ -64,3 +64,14 @@ describe("mensajes de Kapso", () => {
     expect(extraerMensajesKapso(null, "111")).toEqual([]);
   });
 });
+
+describe("numerosDelEvento", () => {
+  it("devuelve los phone_number_id del evento, sin repetir", async () => {
+    const { numerosDelEvento } = await import("./kapso");
+    expect(numerosDelEvento({ phone_number_id: "123456", message: { id: "a" } })).toEqual(["123456"]);
+    expect(
+      numerosDelEvento({ batch: true, data: [{ phone_number_id: "111111" }, { conversation: { phone_number_id: "111111" } }] }),
+    ).toEqual(["111111"]);
+    expect(numerosDelEvento({})).toEqual([]);
+  });
+});
